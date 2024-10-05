@@ -1,6 +1,6 @@
 .PHONY: build run clean deps install
 
-BINARY_NAME=gopilot
+BINARY_NAME=$(shell basename $(CURDIR))
 
 build: deps
 	go build -o $(BINARY_NAME) main.go

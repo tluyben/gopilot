@@ -22,8 +22,8 @@ This project implements an AI-assisted Git workflow tool that leverages OpenAI's
 1. Clone the repository:
 
    ```
-   git clone https://github.com/yourusername/ai-assisted-git-workflow.git
-   cd ai-assisted-git-workflow
+   git clone https://github.com/tluyben/gopilot.git
+   cd gopilot
    ```
 
 2. Install dependencies:
@@ -50,7 +50,7 @@ To build the project, run:
 make build
 ```
 
-This will create an executable named `ai-git-workflow` in the project root.
+This will create an executable named `gopilot` in the project root.
 
 ## Install
 

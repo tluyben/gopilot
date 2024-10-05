@@ -40,6 +40,7 @@ type Config struct {
 	BranchPrompt     string
 	ChangesPrompt    string
 	CommitMsgPrompt  string
+	ProjectName      string
 }
 
 func main() {
@@ -154,7 +155,6 @@ func loadConfig() Config {
 		config.OrBase = "https://openrouter.ai/api/v1/chat/completions"
 	}
 
-
 	flag.StringVar(&config.Files, "files", "", "Comma-separated list of files to process")
 	flag.StringVar(&config.Prompt, "prompt", "", "User prompt for changes")
 	flag.StringVar(&config.BranchPrompt, "branchprompt", "", "File containing the branch name prompt")
@@ -169,6 +169,13 @@ func loadConfig() Config {
 	if config.Prompt == "" {
 		log.Fatal("Prompt is required")
 	}
+
+	// Get the project name from the current directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal("Error getting current working directory:", err)
+	}
+	config.ProjectName = filepath.Base(cwd)
 
 	return config
 }
@@ -279,8 +286,9 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 	filesJSON, _ := json.Marshal(files)
 	var promptBuffer bytes.Buffer
 	err = tmpl.Execute(&promptBuffer, map[string]string{
-		"Prompt": config.Prompt,
-		"Files":  string(filesJSON),
+		"Prompt":      config.Prompt,
+		"Files":       string(filesJSON),
+		"ProjectName": config.ProjectName,
 	})
 	if err != nil {
 		log.Fatal(err, "in generateChanges: template execution")
@@ -366,7 +374,8 @@ func generateCommitMessage(config Config) string {
 
 	var promptBuffer bytes.Buffer
 	err = tmpl.Execute(&promptBuffer, map[string]string{
-		"Prompt": config.Prompt,
+		"Prompt":      config.Prompt,
+		"ProjectName": config.ProjectName,
 	})
 	if err != nil {
 		log.Fatal(err)
