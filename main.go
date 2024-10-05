@@ -160,10 +160,19 @@ func loadConfig() Config {
 	flag.StringVar(&config.BranchPrompt, "branchprompt", "", "File containing the branch name prompt")
 	flag.StringVar(&config.ChangesPrompt, "changesprompt", "", "File containing the changes prompt")
 	flag.StringVar(&config.CommitMsgPrompt, "commitmsgprompt", "", "File containing the commit message prompt")
+
+	// Add the new flag for interactive prompt
+	interactive := flag.Bool("inter", false, "Use interactive prompt")
+
 	flag.Parse()
 
 	if config.OrBase == "" || config.OrToken == "" || config.OrLow == "" || config.OrHigh == "" {
 		log.Fatal("Missing required environment variables")
+	}
+
+	// If interactive mode is enabled, read the prompt from stdin
+	if *interactive {
+		config.Prompt = readInteractivePrompt()
 	}
 
 	if config.Prompt == "" {
@@ -178,6 +187,20 @@ func loadConfig() Config {
 	config.ProjectName = filepath.Base(cwd)
 
 	return config
+}
+
+// New function to read interactive prompt
+func readInteractivePrompt() string {
+	fmt.Println("Enter your prompt (press Ctrl+D or Ctrl+Z on a new line to finish):")
+	scanner := bufio.NewScanner(os.Stdin)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatal("Error reading interactive prompt:", err)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func createOpenAIClient(config Config) *openai.Client {

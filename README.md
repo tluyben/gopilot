@@ -10,6 +10,7 @@ This project implements an AI-assisted Git workflow tool that leverages OpenAI's
 - Dependency management (auto-updating go.mod and running go get)
 - Customizable prompts for different AI interactions
 - Embedded default prompts with the option to override
+- Interactive prompt input mode
 
 ## Prerequisites
 
@@ -76,12 +77,21 @@ Additional flags:
 - `-branchprompt`: File containing custom branch name prompt
 - `-changesprompt`: File containing custom changes prompt
 - `-commitmsgprompt`: File containing custom commit message prompt
+- `-inter`: Use interactive prompt mode
 
 Example:
 
 ```
 gopilot -prompt "Add error handling to database operations" -files "db.go,main.go" -branchprompt custom_branch_prompt.txt
 ```
+
+To use the interactive prompt mode:
+
+```
+gopilot -inter
+```
+
+In interactive mode, you can enter a multi-line prompt. Press Ctrl+D (Unix) or Ctrl+Z (Windows) on a new line to finish entering the prompt.
 
 ## Customizing Prompts
 
