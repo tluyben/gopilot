@@ -586,5 +586,5 @@ func mergeAndCleanup(branchName string) {
 		log.Fatal("Error deleting branch:", err)
 	}
 
-	fmt.Printf("Branch %s merged into main, pushed, and deleted.", branchName)
+	fmt.Printf("Branch %s merged into main, pushed, and deleted.\n", branchName)
 }

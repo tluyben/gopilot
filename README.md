@@ -86,7 +86,7 @@ Additional flags:
 Example:
 
 ```
-gopilot -prompt "Add error handling to database operations" -files "db.go,main.go" -branchprompt custom_branch_prompt.txt -merge
+gopilot -prompt "Add error handling to database operations" -files "db.go,main.go" -branchprompt custom_branch_prompt.txt
 ```
 
 To use the interactive prompt mode:
@@ -96,6 +96,16 @@ gopilot -inter
 ```
 
 In interactive mode, you can enter a multi-line prompt. Press Ctrl+D (Unix) or Ctrl+Z (Windows) on a new line to finish entering the prompt.
+
+### Merging Changes
+
+To merge changes into the main branch after reviewing and checking the code, you can use the `-merge` flag or run the `merge` make target:
+
+```
+make merge
+```
+
+This will merge the current branch into main, push the changes, and delete the feature branch.
 
 ## Customizing Prompts
 
@@ -118,7 +128,8 @@ To use a custom prompt, create a new text file with your desired prompt and pass
 7. Go files are formatted using goimports.
 8. The project is built using `make build`.
 9. If the build succeeds, changes are committed with an AI-generated commit message.
-10. If the `-merge` flag is used, the changes are merged into main, pushed, and the feature branch is deleted.
+10. The user can review the changes and decide whether to merge them.
+11. If the user decides to merge, they can use the `-merge` flag or run `make merge` to merge the changes into main, push, and delete the feature branch.
 
 ## Contributing
 

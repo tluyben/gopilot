@@ -1,4 +1,4 @@
-.PHONY: build run clean deps install
+.PHONY: build run clean deps install merge
 
 BINARY_NAME=$(shell basename $(CURDIR))
 
@@ -19,3 +19,6 @@ deps:
 
 install: build
 	sudo cp $(BINARY_NAME) /usr/local/bin/
+
+merge:
+	./$(BINARY_NAME) -merge
