@@ -193,22 +193,57 @@ func readFiles(fileList string) []FileContent {
 		// Default file patterns
 		patterns := []string{"*.go", "Makefile", "*.txt", "*.md"}
 		for _, pattern := range patterns {
-			matches, _ := filepath.Glob(pattern)
+			matches, err := filepath.Glob(pattern)
+			if err != nil {
+				log.Printf("Error globbing pattern %s: %v", pattern, err)
+				continue
+			}
 			for _, match := range matches {
 				if !strings.Contains(match, ".git") {
-					content, _ := ioutil.ReadFile(match)
-					files = append(files, FileContent{FilePath: match, Content: string(content)})
+					addFileContent(&files, match)
 				}
 			}
 		}
 	} else {
 		for _, file := range strings.Split(fileList, ",") {
-			content, _ := ioutil.ReadFile(strings.TrimSpace(file))
-			files = append(files, FileContent{FilePath: file, Content: string(content)})
+			addFileContent(&files, strings.TrimSpace(file))
 		}
 	}
 
 	return files
+}
+
+func addFileContent(files *[]FileContent, path string) {
+	if info, err := os.Stat(path); err == nil {
+		if info.IsDir() {
+			err := filepath.Walk(path, func(subpath string, subinfo os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !subinfo.IsDir() && !strings.Contains(subpath, ".git") {
+					content, err := ioutil.ReadFile(subpath)
+					if err != nil {
+						log.Printf("Error reading file %s: %v", subpath, err)
+						return nil
+					}
+					*files = append(*files, FileContent{FilePath: subpath, Content: string(content)})
+				}
+				return nil
+			})
+			if err != nil {
+				log.Printf("Error walking directory %s: %v", path, err)
+			}
+		} else {
+			content, err := ioutil.ReadFile(path)
+			if err != nil {
+				log.Printf("Error reading file %s: %v", path, err)
+				return
+			}
+			*files = append(*files, FileContent{FilePath: path, Content: string(content)})
+		}
+	} else {
+		log.Printf("Error accessing file or directory %s: %v", path, err)
+	}
 }
 
 func generateBranchName(config Config, files []FileContent) string {

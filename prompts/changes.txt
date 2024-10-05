@@ -1,4 +1,4 @@
-You are a Go expert. Modify the following Go project to satisfy this prompt: {{.Prompt}}
+You are a Go expert. Modify the following Go project (Project name = {{.ProjectName}}, always use that) to satisfy this prompt: {{.Prompt}}
 
 Make sure to be complete and change the README.md and Makefile IF needed (otherwise exclude them). 
 
