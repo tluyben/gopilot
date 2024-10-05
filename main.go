@@ -46,8 +46,11 @@ type Config struct {
 }
 
 func main() {
+
+	
 	checkGoVersion()
 	config := loadConfig()
+
 
 	files := readFiles(config.Files)
 	branchName := generateBranchName(config, files)
@@ -241,6 +244,13 @@ func loadConfig() Config {
 	// If interactive mode is enabled, read the prompt from stdin
 	if *interactive {
 		config.Prompt = readInteractivePrompt()
+	}
+
+	if config.Merge && config.Prompt == "" {
+		currentBranch := getCurrentBranch()
+		mergeAndCleanup(currentBranch)
+		// exit
+		os.Exit(0)
 	}
 
 	if config.Prompt == "" {
@@ -560,9 +570,9 @@ func showDiff() {
 func mergeAndCleanup(branchName string) {
 	// Checkout main
 	cmd := exec.Command("git", "checkout", "main")
-	err := cmd.Run()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatal("Error checking out main branch:", err)
+		log.Fatal("Error checking out main branch:", string(output), err)
 	}
 
 	// Merge the branch
