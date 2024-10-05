@@ -1,0 +1,4 @@
+You are a helpful assistant that generates Git branch names. Provide only the branch name, nothing else.
+
+Generate a Git branch name for the following prompt: {{.Prompt}}
+Current branch: {{.CurrentBranch}}

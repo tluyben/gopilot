@@ -1,0 +1,14 @@
+.env
+.env.local
+.env.swp
+.env.local.swp
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/vendor/
+/Godeps/
+gopilot

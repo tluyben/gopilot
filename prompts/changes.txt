@@ -1,0 +1,29 @@
+You are a Go expert. Modify the following Go project to satisfy this prompt: {{.Prompt}}
+
+Make sure to be complete and change the README.md and Makefile IF needed (otherwise exclude them). 
+
+Provide ONLY a valid JSON response containing the entire content of changed files, in the same style as the input. Make sure to include the ENTIRE content of modified files.
+
+Current project files:
+{{.Files}}
+
+MAKE SURE TO ONLY GENERATE VALID JSON, DO NOT ATTEMPT ANY EXPLANATION OR OUTPUT THAN THE FILES TO CHANGE IN JSON!!!!! 
+
+Example output: 
+
+[
+{
+    "filepath": "./Makefile",
+    "content": "all: build\n\nbuild:\n\tgo build -o myapp\n\nrun:\n\tgo run .\n"
+}, 
+{
+    "filepath": "./README.md",
+    "content": "# My Go Project\n\nThis is a Go project that does something.\n"
+}, 
+{
+    "filepath": "./main.go",
+    "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n"
+}
+]
+
+MAKE SURE TO ONLY GENERATE VALID JSON, DO NOT ATTEMPT ANY EXPLANATION OR OUTPUT THAN THE FILES TO CHANGE IN JSON!!!!! 
