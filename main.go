@@ -63,6 +63,7 @@ func main() {
 	if buildSucceeds() {
 		commitChanges(config)
 		fmt.Println("Changes applied and committed successfully.")
+		showDiff()
 	} else {
 		fmt.Println("Build failed. Please fix the issues and try again.")
 	}
@@ -536,4 +537,16 @@ func getPromptContent(userFile, defaultFile string) string {
 		log.Fatalf("Error reading default prompt file %s: %v", defaultFile, err)
 	}
 	return string(content)
+}
+
+func showDiff() {
+	cmd := exec.Command("git", "diff", "--cached")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Error getting diff: %v", err)
+		return
+	}
+
+	fmt.Println("\nChanges made:")
+	fmt.Println(string(output))
 }
