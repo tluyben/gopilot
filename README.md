@@ -12,6 +12,7 @@ This project implements an AI-assisted Git workflow tool that leverages OpenAI's
 - Embedded default prompts with the option to override
 - Interactive prompt input mode
 - Automatic formatting of Go files using goimports
+- Option to automatically merge changes into main and delete the feature branch
 
 ## Prerequisites
 
@@ -75,16 +76,17 @@ gopilot -prompt "Your task description here"
 
 Additional flags:
 
-- `-files`: Comma-separated list of files to process (default: all _.go, Makefile, _.txt, \*.md)
+- `-files`: Comma-separated list of files to process (default: all *.go, Makefile, *.txt, *.md)
 - `-branchprompt`: File containing custom branch name prompt
 - `-changesprompt`: File containing custom changes prompt
 - `-commitmsgprompt`: File containing custom commit message prompt
 - `-inter`: Use interactive prompt mode
+- `-merge`: Merge changes into main and delete the branch
 
 Example:
 
 ```
-gopilot -prompt "Add error handling to database operations" -files "db.go,main.go" -branchprompt custom_branch_prompt.txt
+gopilot -prompt "Add error handling to database operations" -files "db.go,main.go" -branchprompt custom_branch_prompt.txt -merge
 ```
 
 To use the interactive prompt mode:
@@ -116,6 +118,7 @@ To use a custom prompt, create a new text file with your desired prompt and pass
 7. Go files are formatted using goimports.
 8. The project is built using `make build`.
 9. If the build succeeds, changes are committed with an AI-generated commit message.
+10. If the `-merge` flag is used, the changes are merged into main, pushed, and the feature branch is deleted.
 
 ## Contributing
 

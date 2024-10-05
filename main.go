@@ -42,6 +42,7 @@ type Config struct {
 	ChangesPrompt   string
 	CommitMsgPrompt string
 	ProjectName     string
+	Merge           bool
 }
 
 func main() {
@@ -64,6 +65,10 @@ func main() {
 		commitChanges(config)
 		fmt.Println("Changes applied and committed successfully.")
 		showDiff()
+
+		if config.Merge {
+			mergeAndCleanup(branchName)
+		}
 	} else {
 		fmt.Println("Build failed. Please fix the issues and try again.")
 	}
@@ -222,6 +227,7 @@ func loadConfig() Config {
 	flag.StringVar(&config.BranchPrompt, "branchprompt", "", "File containing the branch name prompt")
 	flag.StringVar(&config.ChangesPrompt, "changesprompt", "", "File containing the changes prompt")
 	flag.StringVar(&config.CommitMsgPrompt, "commitmsgprompt", "", "File containing the commit message prompt")
+	flag.BoolVar(&config.Merge, "merge", false, "Merge changes into main and delete the branch")
 
 	// Add the new flag for interactive prompt
 	interactive := flag.Bool("inter", false, "Use interactive prompt")
@@ -549,4 +555,36 @@ func showDiff() {
 
 	fmt.Println("\nChanges made:")
 	fmt.Println(string(output))
+}
+
+func mergeAndCleanup(branchName string) {
+	// Checkout main
+	cmd := exec.Command("git", "checkout", "main")
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal("Error checking out main branch:", err)
+	}
+
+	// Merge the branch
+	cmd = exec.Command("git", "merge", branchName)
+	err = cmd.Run()
+	if err != nil {
+		log.Fatal("Error merging branch:", err)
+	}
+
+	// Push changes
+	cmd = exec.Command("git", "push")
+	err = cmd.Run()
+	if err != nil {
+		log.Fatal("Error pushing changes:", err)
+	}
+
+	// Delete the branch
+	cmd = exec.Command("git", "branch", "-D", branchName)
+	err = cmd.Run()
+	if err != nil {
+		log.Fatal("Error deleting branch:", err)
+	}
+
+	fmt.Printf("Branch %s merged into main, pushed, and deleted.", branchName)
 }
