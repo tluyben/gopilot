@@ -1,9 +1,9 @@
-module github.com/tluyben/gopilot
+module gopilot
 
-go 1.20
+go 1.21
 
 require (
 	github.com/joho/godotenv v1.5.1
-	github.com/sashabaranov/go-openai v1.31.0
-	golang.org/x/mod v0.21.0
+	github.com/sashabaranov/go-openai v1.14.1
+	golang.org/x/mod v0.12.0
 )

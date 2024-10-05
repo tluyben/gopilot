@@ -15,6 +15,7 @@ clean:
 deps:
 	go get ./...
 	go mod tidy
+	go install golang.org/x/tools/cmd/goimports@latest
 
 install: build
 	sudo cp $(BINARY_NAME) /usr/local/bin/

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"text/template"
 
@@ -30,20 +31,21 @@ type FileContent struct {
 }
 
 type Config struct {
-	OrBase           string
-	OrToken          string
-	OrLow            string
-	OrHigh           string
-	Files            string
-	Prompt           string
-	GitBranch        string
-	BranchPrompt     string
-	ChangesPrompt    string
-	CommitMsgPrompt  string
-	ProjectName      string
+	OrBase          string
+	OrToken         string
+	OrLow           string
+	OrHigh          string
+	Files           string
+	Prompt          string
+	GitBranch       string
+	BranchPrompt    string
+	ChangesPrompt   string
+	CommitMsgPrompt string
+	ProjectName     string
 }
 
 func main() {
+	checkGoVersion()
 	config := loadConfig()
 
 	files := readFiles(config.Files)
@@ -55,6 +57,9 @@ func main() {
 
 	updateDependencies()
 
+	ensureGoimportsInstalled()
+	runGoimports()
+
 	if buildSucceeds() {
 		commitChanges(config)
 		fmt.Println("Changes applied and committed successfully.")
@@ -63,6 +68,62 @@ func main() {
 	}
 }
 
+func checkGoVersion() {
+	constraint := "1.21"
+	currentVersion := runtime.Version()
+	if !strings.HasPrefix(currentVersion, "go1.") {
+		log.Fatalf("Unsupported Go version: %s. Go 1.21 or higher is required.", currentVersion)
+	}
+	versionNumber := strings.TrimPrefix(currentVersion, "go")
+	if versionNumber < constraint {
+		log.Fatalf("Go version %s is required, but you have %s. Please upgrade your Go installation.", constraint, currentVersion)
+	}
+}
+
+func ensureGoimportsInstalled() {
+	cmd := exec.Command("go", "install", "golang.org/x/tools/cmd/goimports@latest")
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal("Failed to install goimports:", err)
+	}
+}
+
+func runGoimports() {
+	goimportsPath, err := findGoimports()
+	if err != nil {
+		log.Println("Warning: Could not find goimports:", err)
+		return
+	}
+
+	cmd := exec.Command(goimportsPath, "-w", ".")
+	err = cmd.Run()
+	if err != nil {
+		log.Println("Warning: Failed to run goimports:", err)
+	}
+}
+
+func findGoimports() (string, error) {
+	// Check in ~/go/bin/ (common location on macOS and Linux)
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		path := filepath.Join(homeDir, "go", "bin", "goimports")
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	// Check in GOPATH/bin
+	gopath := os.Getenv("GOPATH")
+	if gopath != "" {
+		path := filepath.Join(gopath, "bin", "goimports")
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	// Check in PATH
+	return exec.LookPath("goimports")
+}
 
 func updateDependencies() {
 	if dependenciesNeedUpdate() {
@@ -150,7 +211,7 @@ func loadConfig() Config {
 		OrLow:   os.Getenv("OR_LOW"),
 		OrHigh:  os.Getenv("OR_HIGH"),
 	}
-	
+
 	if config.OrBase == "" {
 		config.OrBase = "https://openrouter.ai/api/v1/chat/completions"
 	}

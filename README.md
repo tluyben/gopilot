@@ -11,12 +11,14 @@ This project implements an AI-assisted Git workflow tool that leverages OpenAI's
 - Customizable prompts for different AI interactions
 - Embedded default prompts with the option to override
 - Interactive prompt input mode
+- Automatic formatting of Go files using goimports
 
 ## Prerequisites
 
-- Go 1.16 or later
+- Go 1.21 or later
 - Git
 - OpenAI API key
+- goimports (automatically installed during setup)
 
 ## Installation
 
@@ -30,7 +32,7 @@ This project implements an AI-assisted Git workflow tool that leverages OpenAI's
 2. Install dependencies:
 
    ```
-   go mod tidy
+   make deps
    ```
 
 3. Set up environment variables:
@@ -105,13 +107,15 @@ To use a custom prompt, create a new text file with your desired prompt and pass
 
 ## How It Works
 
-1. The tool generates a new branch name based on your prompt.
-2. It creates and checks out the new branch.
-3. It uses the OpenAI API to generate code changes based on your prompt and the current project files.
-4. The changes are applied to the project files.
-5. Dependencies are updated if necessary (go.mod is synced with imports).
-6. The project is built using `make build`.
-7. If the build succeeds, changes are committed with an AI-generated commit message.
+1. The tool checks if the installed Go version is 1.21 or higher.
+2. It generates a new branch name based on your prompt.
+3. It creates and checks out the new branch.
+4. It uses the OpenAI API to generate code changes based on your prompt and the current project files.
+5. The changes are applied to the project files.
+6. Dependencies are updated if necessary (go.mod is synced with imports).
+7. Go files are formatted using goimports.
+8. The project is built using `make build`.
+9. If the build succeeds, changes are committed with an AI-generated commit message.
 
 ## Contributing
 
