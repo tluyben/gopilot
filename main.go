@@ -540,7 +540,7 @@ func getPromptContent(userFile, defaultFile string) string {
 }
 
 func showDiff() {
-	cmd := exec.Command("git", "diff", "--cached")
+	cmd := exec.Command("git", "diff", "--cached", "main")
 	output, err := cmd.Output()
 	if err != nil {
 		log.Printf("Error getting diff: %v", err)
