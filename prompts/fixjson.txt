@@ -15,6 +15,7 @@ The correct format should be a JSON array of objects, each with 'filepath' and '
   }
 ]
 
-IF THERE is context the JSON that's not complete then just CUT IT OFF: the main goal is to provide the JSON in the correct format.
+IF THERE is context the JSON that's not complete then just CUT IT OFF: the main goal is to provide the JSON in the correct format!!!!
 
-Please provide the fixed JSON:
+MAKE SURE TO ONLY GENERATE VALID JSON, DO NOT ATTEMPT ANY EXPLANATION OR OUTPUT THAN THE FILES TO CHANGE IN JSON!!!!! 
+ONLY GENERATE COMPLETE FILES, NEVER EVER USE (rest of the code remains unchanged) OR (rest of the file remains unchanged) OR SIMILAR, OR PUT TODOs IN THE CODE; JUST WRITE ALL.
