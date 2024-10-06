@@ -1,0 +1,55 @@
+func splitGoFile(filename string) {
+	// Read the Go file
+	content, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Fatalf("Error reading file %s: %v", filename, err)
+	}
+
+	// Parse the Go file
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, filename, content, 0)
+	if err != nil {
+		log.Fatalf("Error parsing file %s: %v", filename, err)
+	}
+
+	// Create the editor directory
+	baseDir := filepath.Join("editor", strings.TrimSuffix(filename, ".go"))
+	err = os.MkdirAll(baseDir, 0755)
+	if err != nil {
+		log.Fatalf("Error creating directory %s: %v", baseDir, err)
+	}
+
+	// Split the file into parts
+	imports := ""
+	varsAndStructs := ""
+	functions := make(map[string]string)
+
+	// Extract imports
+	for _, decl := range f.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			imports += string(content[gen.Pos()-1 : gen.End()])
+		}
+	}
+
+	// Extract vars, structs, and functions
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			if d.Tok == token.VAR || d.Tok == token.TYPE {
+				varsAndStructs += string(content[d.Pos()-1 : d.End()])
+			}
+		case *ast.FuncDecl:
+			name := d.Name.Name
+			functions[name] = string(content[d.Pos()-1 : d.End()])
+		}
+	}
+
+	// Write .gopart files
+	writeGopart(baseDir, "imports.gopart", imports)
+	writeGopart(baseDir, "varsandstructs.gopart", varsAndStructs)
+	for name, content := range functions {
+		writeGopart(baseDir, name+".gopart", content)
+	}
+
+	fmt.Printf("Split %s into .gopart files in %s\n", filename, baseDir)
+}

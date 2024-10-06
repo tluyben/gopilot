@@ -1,0 +1,22 @@
+func findGoimports() (string, error) {
+	// Check in ~/go/bin/ (common location on macOS and Linux)
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		path := filepath.Join(homeDir, "go", "bin", "goimports")
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	// Check in GOPATH/bin
+	gopath := os.Getenv("GOPATH")
+	if gopath != "" {
+		path := filepath.Join(gopath, "bin", "goimports")
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	// Check in PATH
+	return exec.LookPath("goimports")
+}

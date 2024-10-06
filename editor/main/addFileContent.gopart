@@ -1,0 +1,32 @@
+func addFileContent(files *[]FileContent, path string) {
+	if info, err := os.Stat(path); err == nil {
+		if info.IsDir() {
+			err := filepath.Walk(path, func(subpath string, subinfo os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !subinfo.IsDir() && !strings.Contains(subpath, ".git") {
+					content, err := ioutil.ReadFile(subpath)
+					if err != nil {
+						log.Printf("Error reading file %s: %v", subpath, err)
+						return nil
+					}
+					*files = append(*files, FileContent{FilePath: subpath, Content: string(content)})
+				}
+				return nil
+			})
+			if err != nil {
+				log.Printf("Error walking directory %s: %v", path, err)
+			}
+		} else {
+			content, err := ioutil.ReadFile(path)
+			if err != nil {
+				log.Printf("Error reading file %s: %v", path, err)
+				return
+			}
+			*files = append(*files, FileContent{FilePath: path, Content: string(content)})
+		}
+	} else {
+		log.Printf("Error accessing file or directory %s: %v", path, err)
+	}
+}

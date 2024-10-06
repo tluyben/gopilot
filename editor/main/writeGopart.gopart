@@ -1,0 +1,7 @@
+func writeGopart(dir, filename, content string) {
+	path := filepath.Join(dir, filename)
+	err := ioutil.WriteFile(path, []byte(content), 0644)
+	if err != nil {
+		log.Fatalf("Error writing file %s: %v", path, err)
+	}
+}

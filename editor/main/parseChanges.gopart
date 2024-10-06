@@ -1,0 +1,50 @@
+func parseChanges(config Config, rawChanges string) []FileContent {
+	var changes []FileContent
+	start := strings.Index(rawChanges, "[")
+	if start == -1 {
+		return changes
+	}
+
+	rawJSON := rawChanges[start:]
+	var validJSON string
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i, char := range rawJSON {
+		if inString {
+			if !escaped && char == '"' {
+				inString = false
+			}
+			escaped = char == '\\' && !escaped
+		} else if char == '"' {
+			inString = true
+		} else if char == '{' {
+			depth++
+		} else if char == '}' {
+			depth--
+			if depth == 0 {
+				validJSON = rawJSON[:i+1]
+				break
+			}
+		}
+	}
+
+	if validJSON == "" {
+		return changes
+	}
+
+	err := json.Unmarshal([]byte(validJSON), &changes)
+	if err != nil {
+		fmt.Println("Error unmarshalling changes:", err)
+		return changes
+	}
+
+	// If there are more changes to process, recursively call generateChanges
+	if len(validJSON) < len(rawJSON) {
+		additionalChanges := generateAdditionalChanges(config, changes, rawJSON[len(validJSON):])
+		changes = append(changes, additionalChanges...)
+	}
+
+	return changes
+}

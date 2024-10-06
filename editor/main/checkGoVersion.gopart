@@ -1,0 +1,11 @@
+func checkGoVersion() {
+	constraint := "1.21"
+	currentVersion := runtime.Version()
+	if !strings.HasPrefix(currentVersion, "go1.") {
+		log.Fatalf("Unsupported Go version: %s. Go 1.21 or higher is required.", currentVersion)
+	}
+	versionNumber := strings.TrimPrefix(currentVersion, "go")
+	if versionNumber < constraint {
+		log.Fatalf("Go version %s is required, but you have %s. Please upgrade your Go installation.", constraint, currentVersion)
+	}
+}

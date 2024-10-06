@@ -1,0 +1,59 @@
+func loadConfig() Config {
+	godotenv.Load()
+
+	config := Config{
+		OrBase:  os.Getenv("OR_BASE"),
+		OrToken: os.Getenv("OR_TOKEN"),
+		OrLow:   os.Getenv("OR_LOW"),
+		OrHigh:  os.Getenv("OR_HIGH"),
+	}
+
+	if config.OrBase == "" {
+		config.OrBase = "https://openrouter.ai/api/v1/chat/completions"
+	}
+
+	flag.StringVar(&config.Files, "files", "", "Comma-separated list of files to process")
+	flag.StringVar(&config.Prompt, "prompt", "", "User prompt for changes")
+	flag.StringVar(&config.BranchPrompt, "branchprompt", "", "File containing the branch name prompt")
+	flag.StringVar(&config.ChangesPrompt, "changesprompt", "", "File containing the changes prompt")
+	flag.StringVar(&config.CommitMsgPrompt, "commitmsgprompt", "", "File containing the commit message prompt")
+	flag.StringVar(&config.FixJsonPrompt, "fixjsonprompt", "", "File containing the fix JSON prompt")
+	flag.BoolVar(&config.Merge, "merge", false, "Merge changes into main and delete the branch")
+	flag.BoolVar(&config.Remove, "rm", false, "Delete the current branch and move back to main branch")
+	flag.StringVar(&config.SplitFiles, "split", "", "Comma-separated list of Go files to split into .gopart files")
+	flag.StringVar(&config.UnsplitFiles, "unsplit", "", "Comma-separated list of Go files to recreate from .gopart files")
+
+	// Add the new flag for interactive prompt
+	interactive := flag.Bool("inter", false, "Use interactive prompt")
+
+	flag.Parse()
+
+	if config.OrBase == "" || config.OrToken == "" || config.OrLow == "" || config.OrHigh == "" {
+		log.Fatal("Missing required environment variables")
+	}
+
+	// If interactive mode is enabled, read the prompt from stdin
+	if *interactive {
+		config.Prompt = readInteractivePrompt()
+	}
+
+	if config.Merge && config.Prompt == "" {
+		currentBranch := getCurrentBranch()
+		mergeAndCleanup(currentBranch)
+		// exit
+		os.Exit(0)
+	}
+
+	if config.Prompt == "" && !config.Remove && config.SplitFiles == "" && config.UnsplitFiles == "" {
+		log.Fatal("Prompt is required")
+	}
+
+	// Get the project name from the current directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal("Error getting current working directory:", err)
+	}
+	config.ProjectName = filepath.Base(cwd)
+
+	return config
+}

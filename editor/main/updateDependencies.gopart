@@ -1,0 +1,9 @@
+func updateDependencies() {
+	if dependenciesNeedUpdate() {
+		fmt.Println("Updating dependencies...")
+		runGoGet()
+		runGoModTidy()
+	} else {
+		fmt.Println("Dependencies are up to date.")
+	}
+}

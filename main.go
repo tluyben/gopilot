@@ -8,12 +8,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -45,6 +49,9 @@ type Config struct {
 	ProjectName     string
 	Merge           bool
 	Remove          bool
+	SplitFiles		string
+	UnsplitFiles 	string
+
 }
 
 func main() {
@@ -54,6 +61,16 @@ func main() {
 	if config.Remove {
 		currentBranch := getCurrentBranch()
 		removeAndCleanup(currentBranch)
+		os.Exit(0)
+	}
+
+	if config.SplitFiles != "" {
+		splitGoFiles(config.SplitFiles)
+		os.Exit(0)
+	}
+
+	if config.UnsplitFiles != "" {
+		unsplitGoFiles(config.UnsplitFiles)
 		os.Exit(0)
 	}
 
@@ -79,6 +96,141 @@ func main() {
 		}
 	} else {
 		fmt.Println("Build failed. Please fix the issues and try again.")
+	}
+}
+func splitGoFiles(fileList string) {
+	files := strings.Split(fileList, ",")
+	for _, file := range files {
+		splitGoFile(strings.TrimSpace(file))
+	}
+}
+
+func splitGoFile(filename string) {
+	// Read the Go file
+	content, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Fatalf("Error reading file %s: %v", filename, err)
+	}
+
+	// Parse the Go file
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, filename, content, 0)
+	if err != nil {
+		log.Fatalf("Error parsing file %s: %v", filename, err)
+	}
+
+	// Create the editor directory
+	baseDir := filepath.Join("editor", strings.TrimSuffix(filename, ".go"))
+	err = os.MkdirAll(baseDir, 0755)
+	if err != nil {
+		log.Fatalf("Error creating directory %s: %v", baseDir, err)
+	}
+
+	// Split the file into parts
+	imports := ""
+	varsAndStructs := ""
+	functions := make(map[string]string)
+
+	// Extract imports
+	for _, decl := range f.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			imports += string(content[gen.Pos()-1 : gen.End()])
+		}
+	}
+
+	// Extract vars, structs, and functions
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			if d.Tok == token.VAR || d.Tok == token.TYPE {
+				varsAndStructs += string(content[d.Pos()-1 : d.End()])
+			}
+		case *ast.FuncDecl:
+			name := d.Name.Name
+			functions[name] = string(content[d.Pos()-1 : d.End()])
+		}
+	}
+
+	// Write .gopart files
+	writeGopart(baseDir, "imports.gopart", imports)
+	writeGopart(baseDir, "varsandstructs.gopart", varsAndStructs)
+	for name, content := range functions {
+		writeGopart(baseDir, name+".gopart", content)
+	}
+
+	fmt.Printf("Split %s into .gopart files in %s\n", filename, baseDir)
+}
+// Add these functions to handle the unsplitting
+func unsplitGoFiles(fileList string) {
+	files := strings.Split(fileList, ",")
+	for _, file := range files {
+		unsplitGoFile(strings.TrimSpace(file))
+	}
+}
+
+func unsplitGoFile(filename string) {
+	baseDir := filepath.Join("editor", strings.TrimSuffix(filename, ".go"))
+	
+	// Check if the directory exists
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		log.Fatalf("Directory %s does not exist. Make sure you've split the file first.", baseDir)
+	}
+
+	// Read all .gopart files
+	files, err := ioutil.ReadDir(baseDir)
+	if err != nil {
+		log.Fatalf("Error reading directory %s: %v", baseDir, err)
+	}
+
+	var parts []string
+	for _, file := range files {
+		if filepath.Ext(file.Name()) == ".gopart" {
+			content, err := ioutil.ReadFile(filepath.Join(baseDir, file.Name()))
+			if err != nil {
+				log.Fatalf("Error reading file %s: %v", file.Name(), err)
+			}
+			parts = append(parts, string(content))
+		}
+	}
+
+	// Sort the parts to ensure correct order
+	sort.Slice(parts, func(i, j int) bool {
+		order := map[string]int{"package": 0, "import": 1, "var": 2, "const": 3, "type": 4, "func": 5}
+		for keyword, priority := range order {
+			if strings.HasPrefix(strings.TrimSpace(parts[i]), keyword) {
+				return priority < order[getFirstKeyword(parts[j])]
+			}
+			if strings.HasPrefix(strings.TrimSpace(parts[j]), keyword) {
+				return order[getFirstKeyword(parts[i])] < priority
+			}
+		}
+		return false
+	})
+
+	// Combine the parts
+	combinedContent := strings.Join(parts, "\n\n")
+
+	// Write the combined content to the original .go file
+	err = ioutil.WriteFile(filename, []byte(combinedContent), 0644)
+	if err != nil {
+		log.Fatalf("Error writing file %s: %v", filename, err)
+	}
+
+	fmt.Printf("Recreated %s from .gopart files in %s\n", filename, baseDir)
+}
+
+func getFirstKeyword(s string) string {
+	words := strings.Fields(s)
+	if len(words) > 0 {
+		return words[0]
+	}
+	return ""
+}
+func writeGopart(dir, filename, content string) {
+	path := filepath.Join(dir, filename)
+	err := ioutil.WriteFile(path, []byte(content), 0644)
+	if err != nil {
+		log.Fatalf("Error writing file %s: %v", path, err)
 	}
 }
 
@@ -238,6 +390,8 @@ func loadConfig() Config {
 	flag.StringVar(&config.FixJsonPrompt, "fixjsonprompt", "", "File containing the fix JSON prompt")
 	flag.BoolVar(&config.Merge, "merge", false, "Merge changes into main and delete the branch")
 	flag.BoolVar(&config.Remove, "rm", false, "Delete the current branch and move back to main branch")
+	flag.StringVar(&config.SplitFiles, "split", "", "Comma-separated list of Go files to split into .gopart files")
+	flag.StringVar(&config.UnsplitFiles, "unsplit", "", "Comma-separated list of Go files to recreate from .gopart files")
 
 	// Add the new flag for interactive prompt
 	interactive := flag.Bool("inter", false, "Use interactive prompt")
@@ -260,7 +414,7 @@ func loadConfig() Config {
 		os.Exit(0)
 	}
 
-	if config.Prompt == "" && !config.Remove {
+	if config.Prompt == "" && !config.Remove && config.SplitFiles == "" && config.UnsplitFiles == "" {
 		log.Fatal("Prompt is required")
 	}
 

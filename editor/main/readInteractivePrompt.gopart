@@ -1,0 +1,12 @@
+func readInteractivePrompt() string {
+	fmt.Println("Enter your prompt (press Ctrl+D or Ctrl+Z on a new line to finish):")
+	scanner := bufio.NewScanner(os.Stdin)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatal("Error reading interactive prompt:", err)
+	}
+	return strings.Join(lines, "\n")
+}

@@ -1,0 +1,17 @@
+func removeAndCleanup(branchName string) {
+	// Checkout main
+	cmd := exec.Command("git", "checkout", "main")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatal("Error checking out main branch:", string(output), err)
+	}
+
+	// Delete the branch
+	cmd = exec.Command("git", "branch", "-D", branchName)
+	err = cmd.Run()
+	if err != nil {
+		log.Fatal("Error deleting branch:", err)
+	}
+
+	fmt.Printf("Branch %s deleted and moved back to main branch.\n", branchName)
+}

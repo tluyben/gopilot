@@ -1,0 +1,24 @@
+var promptFS embed.FS
+type FileContent struct {
+	FilePath string `json:"filepath"`
+	Content  string `json:"content"`
+}
+type Config struct {
+	OrBase          string
+	OrToken         string
+	OrLow           string
+	OrHigh          string
+	Files           string
+	Prompt          string
+	GitBranch       string
+	BranchPrompt    string
+	ChangesPrompt   string
+	CommitMsgPrompt string
+	FixJsonPrompt   string
+	ProjectName     string
+	Merge           bool
+	Remove          bool
+	SplitFiles		string
+	UnsplitFiles 	string
+
+}

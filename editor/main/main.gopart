@@ -1,0 +1,44 @@
+func main() {
+	checkGoVersion()
+	config := loadConfig()
+
+	if config.Remove {
+		currentBranch := getCurrentBranch()
+		removeAndCleanup(currentBranch)
+		os.Exit(0)
+	}
+
+	if config.SplitFiles != "" {
+		splitGoFiles(config.SplitFiles)
+		os.Exit(0)
+	}
+
+	if config.UnsplitFiles != "" {
+		unsplitGoFiles(config.UnsplitFiles)
+		os.Exit(0)
+	}
+
+	files := readFiles(config.Files)
+	branchName := generateBranchName(config, files)
+	checkoutBranch(branchName)
+
+	changes := generateChanges(config, files)
+	applyChanges(changes)
+
+	updateDependencies()
+
+	ensureGoimportsInstalled()
+	runGoimports()
+
+	if buildSucceeds() {
+		commitChanges(config)
+		fmt.Println("Changes applied and committed successfully.")
+		showDiff()
+
+		if config.Merge {
+			mergeAndCleanup(branchName)
+		}
+	} else {
+		fmt.Println("Build failed. Please fix the issues and try again.")
+	}
+}

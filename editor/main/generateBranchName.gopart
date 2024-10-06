@@ -1,0 +1,40 @@
+func generateBranchName(config Config, files []FileContent) string {
+	client := createOpenAIClient(config)
+	currentBranch := getCurrentBranch()
+
+	promptContent := getPromptContent(config.BranchPrompt, "prompts/branch_name.txt")
+	tmpl, err := template.New("branch").Parse(promptContent)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var promptBuffer bytes.Buffer
+	err = tmpl.Execute(&promptBuffer, map[string]string{
+		"Prompt":        config.Prompt,
+		"CurrentBranch": currentBranch,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: config.OrLow,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: promptBuffer.String(),
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		log.Fatal(err, resp, "in generateBranchName")
+	}
+
+	fmt.Println("branch name suggestion: ", resp.Choices[0].Message.Content)
+
+	return strings.TrimSpace(resp.Choices[0].Message.Content)
+}

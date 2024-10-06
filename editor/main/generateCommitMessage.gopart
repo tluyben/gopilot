@@ -1,0 +1,39 @@
+func generateCommitMessage(config Config) string {
+	client := createOpenAIClient(config)
+
+	promptContent := getPromptContent(config.CommitMsgPrompt, "prompts/commit_message.txt")
+	tmpl, err := template.New("commit").Parse(promptContent)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var promptBuffer bytes.Buffer
+	err = tmpl.Execute(&promptBuffer, map[string]string{
+		"Prompt":      config.Prompt,
+		"ProjectName": config.ProjectName,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: config.OrLow,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: promptBuffer.String(),
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("commit message suggestion: ", resp.Choices[0].Message.Content)
+
+	return strings.TrimSpace(resp.Choices[0].Message.Content)
+}

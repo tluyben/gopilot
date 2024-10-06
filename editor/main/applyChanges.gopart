@@ -1,0 +1,8 @@
+func applyChanges(changes []FileContent) {
+	for _, change := range changes {
+		err := os.WriteFile(change.FilePath, []byte(change.Content), 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
