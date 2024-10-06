@@ -9,7 +9,7 @@ The project is structured with .gopart files in the editor directory. Each .go f
 Only modify the .gopart files that need changes. You don't need to provide the entire content of files that remain unchanged.
 
 Provide a valid JSON response containing only the changed .gopart files. Include the entire content of modified files. You can also delete files by setting the "delete" field to true.
-Make sure to include insert-before or insert-after for where to insert *new* functions. 
+Make sure to include insert-before or insert-after for where to insert functions; this is for readability as well as where order matters (tests). 
 
 Current project files:
 {{.Files}}
