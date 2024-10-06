@@ -341,23 +341,31 @@ func writeGopart(dir, filename, content string) {
 }
 
 func unsplitGoFiles(fileList string) {
-	if fileList == "" {
-		// Unsplit all files in ./editor/*
-		dirs, err := ioutil.ReadDir("./editor")
-		if err != nil {
-			log.Fatalf("Error reading editor directory: %v", err)
-		}
-		for _, dir := range dirs {
-			if dir.IsDir() {
-				unsplitGoFile(dir.Name() + ".go")
+	files := strings.Split(fileList, ",")
+	// if fileList == "" {
+	// Unsplit all files in ./editor/*
+	dirs, err := os.ReadDir("./editor")
+	if err != nil {
+		log.Fatalf("Error reading editor directory: %v", err)
+	}
+	for _, dir := range dirs {
+		if dir.IsDir() {
+			file := dir.Name() + ".go"
+			unsplitGoFile(file)
+			// remove file from files if it's there 
+			for i, f := range files {
+				if f == file {
+					files = append(files[:i], files[i+1:]...)
+				}
 			}
 		}
-	} else {
-		files := strings.Split(fileList, ",")
-		for _, file := range files {
-			unsplitGoFile(strings.TrimSpace(file))
-		}
 	}
+	// } else {
+	
+	for _, file := range files {
+		unsplitGoFile(strings.TrimSpace(file))
+	}
+	// }
 }
 
 func (w *WrappedOpenAIClient) CreateChatCompletion(ctx context.Context, request openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
@@ -375,7 +383,8 @@ func writeSplitOrder(path string, order []string) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(path, content, 0644)
+	fmt.Println("Writing split order to", path, order)
+	return os.WriteFile(path, content, 0644)
 }
 
 func updateDependencies() {
@@ -658,6 +667,7 @@ func prompt(config Config, goFiles []string) {
 	applyChanges(changes)
 
 	// Unsplit files after changes are applied
+	
 	unsplitGoFiles(strings.Join(goFiles, ","))
 
 	updateDependencies()
@@ -912,6 +922,7 @@ func processLocations(changes []FileContent) []FileContent {
 
 			// Remove the insertion point from the content
 			changes[i].Content = removeInsertionPoint(change.Content)
+			
 		}
 	}
 
