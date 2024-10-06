@@ -15,3 +15,4 @@ func removeAndCleanup(branchName string) {
 
 	fmt.Printf("Branch %s deleted and moved back to main branch.\n", branchName)
 }
+

@@ -40,9 +40,11 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 	fmt.Println("raw changes suggestion: ", resp.Choices[0].Message.Content)
 
 	var changes []FileContent
-	changes = parseChanges(config, resp.Choices[0].Message.Content)
-
-	fmt.Println("changes suggestion: ", changes)
+	err = json.Unmarshal([]byte(resp.Choices[0].Message.Content), &changes)
+	if err != nil {
+		log.Fatal("Error parsing changes JSON:", err)
+	}
 
 	return changes
 }
+

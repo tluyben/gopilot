@@ -2,28 +2,32 @@ func main() {
 	checkGoVersion()
 	config := loadConfig()
 
-	if config.Remove {
-		currentBranch := getCurrentBranch()
-		removeAndCleanup(currentBranch)
-		os.Exit(0)
-	}
-
 	if config.SplitFiles != "" {
 		splitGoFiles(config.SplitFiles)
-		os.Exit(0)
+		return
 	}
 
 	if config.UnsplitFiles != "" {
 		unsplitGoFiles(config.UnsplitFiles)
-		os.Exit(0)
+		return
 	}
 
-	files := readFiles(config.Files)
+	// Automatically split all *.go files in the root directory
+	goFiles, err := filepath.Glob("*.go")
+	if err != nil {
+		log.Fatal("Error finding Go files:", err)
+	}
+	splitGoFiles(strings.Join(goFiles, ","))
+
+	files := readGoPartFiles("editor")
 	branchName := generateBranchName(config, files)
 	checkoutBranch(branchName)
 
 	changes := generateChanges(config, files)
 	applyChanges(changes)
+
+	// Unsplit files after changes are applied
+	unsplitGoFiles(strings.Join(goFiles, ","))
 
 	updateDependencies()
 
@@ -42,3 +46,4 @@ func main() {
 		fmt.Println("Build failed. Please fix the issues and try again.")
 	}
 }
+

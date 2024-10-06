@@ -12,3 +12,4 @@ func buildSucceeds() bool {
 
 	return true
 }
+

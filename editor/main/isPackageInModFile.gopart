@@ -6,3 +6,4 @@ func isPackageInModFile(modFile *modfile.File, packageName string) bool {
 	}
 	return false
 }
+

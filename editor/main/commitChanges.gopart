@@ -12,3 +12,4 @@ func commitChanges(config Config) {
 		log.Fatal(err)
 	}
 }
+

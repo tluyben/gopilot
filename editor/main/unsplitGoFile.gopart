@@ -48,3 +48,4 @@ func unsplitGoFile(filename string) {
 
 	fmt.Printf("Recreated %s from .gopart files in %s\n", filename, baseDir)
 }
+

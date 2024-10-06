@@ -7,3 +7,4 @@ func updateDependencies() {
 		fmt.Println("Dependencies are up to date.")
 	}
 }
+

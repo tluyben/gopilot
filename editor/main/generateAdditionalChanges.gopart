@@ -40,3 +40,4 @@ func generateAdditionalChanges(config Config, existingChanges []FileContent, rem
 
 	return parseChanges(config, resp.Choices[0].Message.Content)
 }
+

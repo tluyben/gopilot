@@ -5,7 +5,7 @@ func generateBranchName(config Config, files []FileContent) string {
 	promptContent := getPromptContent(config.BranchPrompt, "prompts/branch_name.txt")
 	tmpl, err := template.New("branch").Parse(promptContent)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err, "in generateBranchName: template parsing")
 	}
 
 	var promptBuffer bytes.Buffer
@@ -38,3 +38,4 @@ func generateBranchName(config Config, files []FileContent) string {
 
 	return strings.TrimSpace(resp.Choices[0].Message.Content)
 }
+

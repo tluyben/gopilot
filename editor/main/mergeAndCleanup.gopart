@@ -29,3 +29,4 @@ func mergeAndCleanup(branchName string) {
 
 	fmt.Printf("Branch %s merged into main, pushed, and deleted.\n", branchName)
 }
+

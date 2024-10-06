@@ -37,3 +37,4 @@ func generateCommitMessage(config Config) string {
 
 	return strings.TrimSpace(resp.Choices[0].Message.Content)
 }
+

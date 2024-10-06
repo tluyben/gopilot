@@ -9,3 +9,4 @@ func checkGoVersion() {
 		log.Fatalf("Go version %s is required, but you have %s. Please upgrade your Go installation.", constraint, currentVersion)
 	}
 }
+

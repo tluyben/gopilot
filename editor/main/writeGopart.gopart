@@ -5,3 +5,4 @@ func writeGopart(dir, filename, content string) {
 		log.Fatalf("Error writing file %s: %v", path, err)
 	}
 }
+

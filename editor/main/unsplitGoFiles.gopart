@@ -4,3 +4,4 @@ func unsplitGoFiles(fileList string) {
 		unsplitGoFile(strings.TrimSpace(file))
 	}
 }
+

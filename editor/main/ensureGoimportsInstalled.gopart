@@ -5,3 +5,4 @@ func ensureGoimportsInstalled() {
 		log.Fatal("Failed to install goimports:", err)
 	}
 }
+

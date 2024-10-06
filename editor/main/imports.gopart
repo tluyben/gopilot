@@ -1,5 +1,6 @@
 package main
 
+//go:embed prompts/*.txt
 import (
 	"bufio"
 	"bytes"
@@ -25,3 +26,4 @@ import (
 	"github.com/sashabaranov/go-openai"
 	"golang.org/x/mod/modfile"
 )
+

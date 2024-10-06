@@ -4,12 +4,13 @@ func getPromptContent(userFile, defaultFile string) string {
 		if err == nil {
 			return string(content)
 		}
-		log.Printf("Warning: Could not read user-provided prompt file %s. Using default.", userFile)
+		log.Printf("Warning: Could not read user-provided prompt file %s. Using default. in getPromptContent", userFile)
 	}
 
 	content, err := promptFS.ReadFile(defaultFile)
 	if err != nil {
-		log.Fatalf("Error reading default prompt file %s: %v", defaultFile, err)
+		log.Fatalf("Error reading default prompt file %s: %v  in getPromptContent", defaultFile, err)
 	}
 	return string(content)
 }
+

@@ -8,3 +8,4 @@ func checkoutBranch(branchName string) {
 		//log.Fatal(err, cmd, " in checkoutBranch")
 	}
 }
+

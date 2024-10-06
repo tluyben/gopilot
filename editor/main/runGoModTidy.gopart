@@ -8,3 +8,4 @@ func runGoModTidy() {
 		log.Fatalf("Error running go mod tidy: %v\n%s", err, stderr.String())
 	}
 }
+

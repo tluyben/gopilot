@@ -5,3 +5,4 @@ func getFirstKeyword(s string) string {
 	}
 	return ""
 }
+

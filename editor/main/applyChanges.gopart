@@ -1,8 +1,20 @@
 func applyChanges(changes []FileContent) {
 	for _, change := range changes {
-		err := os.WriteFile(change.FilePath, []byte(change.Content), 0644)
-		if err != nil {
-			log.Fatal(err)
+		if change.Delete {
+			err := os.Remove(change.FilePath)
+			if err != nil {
+				log.Printf("Error deleting file %s: %v", change.FilePath, err)
+			} else {
+				fmt.Printf("Deleted file: %s\n", change.FilePath)
+			}
+		} else {
+			err := ioutil.WriteFile(change.FilePath, []byte(change.Content), 0644)
+			if err != nil {
+				log.Printf("Error writing file %s: %v", change.FilePath, err)
+			} else {
+				fmt.Printf("Updated file: %s\n", change.FilePath)
+			}
 		}
 	}
 }
+

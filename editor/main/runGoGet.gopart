@@ -8,3 +8,4 @@ func runGoGet() {
 		log.Fatalf("Error running go get: %v\n%s", err, stderr.String())
 	}
 }
+

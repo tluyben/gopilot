@@ -3,3 +3,4 @@ func createOpenAIClient(config Config) *openai.Client {
 	_config.BaseURL = config.OrBase
 	return openai.NewClientWithConfig(_config)
 }
+

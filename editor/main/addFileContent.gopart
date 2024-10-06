@@ -30,3 +30,4 @@ func addFileContent(files *[]FileContent, path string) {
 		log.Printf("Error accessing file or directory %s: %v", path, err)
 	}
 }
+

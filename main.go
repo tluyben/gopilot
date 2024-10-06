@@ -26,7 +26,7 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-
+//go:embed prompts/*.txt
 var promptFS embed.FS
 type FileContent struct {
 	FilePath string `json:"filepath"`
@@ -319,7 +319,7 @@ func generateBranchName(config Config, files []FileContent) string {
 	promptContent := getPromptContent(config.BranchPrompt, "prompts/branch_name.txt")
 	tmpl, err := template.New("branch").Parse(promptContent)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err, "in generateBranchName: template parsing")
 	}
 
 	var promptBuffer bytes.Buffer
@@ -470,12 +470,12 @@ func getPromptContent(userFile, defaultFile string) string {
 		if err == nil {
 			return string(content)
 		}
-		log.Printf("Warning: Could not read user-provided prompt file %s. Using default.", userFile)
+		log.Printf("Warning: Could not read user-provided prompt file %s. Using default. in getPromptContent", userFile)
 	}
 
 	content, err := promptFS.ReadFile(defaultFile)
 	if err != nil {
-		log.Fatalf("Error reading default prompt file %s: %v", defaultFile, err)
+		log.Fatalf("Error reading default prompt file %s: %v  in getPromptContent", defaultFile, err)
 	}
 	return string(content)
 }
@@ -775,7 +775,7 @@ func splitGoFile(filename string) {
 
 	// Parse the Go file
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filename, content, 0)
+	f, err := parser.ParseFile(fset, filename, content, parser.ParseComments)
 	if err != nil {
 		log.Fatalf("Error parsing file %s: %v", filename, err)
 	}
@@ -787,11 +787,22 @@ func splitGoFile(filename string) {
 		log.Fatalf("Error creating directory %s: %v", baseDir, err)
 	}
 
-	// Extract package declaration and imports
-	packageAndImports := fmt.Sprintf("package %s\n\n", f.Name.Name)
+	// Extract package declaration, imports, and //go:embed directives
+	var packageAndImports strings.Builder
+	packageAndImports.WriteString(fmt.Sprintf("package %s\n\n", f.Name.Name))
+
+	// Handle //go:embed directives
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			if strings.HasPrefix(c.Text, "//go:embed") {
+				packageAndImports.WriteString(c.Text + "\n")
+			}
+		}
+	}
+
 	for _, decl := range f.Decls {
 		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			packageAndImports += string(content[gen.Pos()-1 : gen.End()])
+			packageAndImports.WriteString(string(content[gen.Pos()-1 : gen.End()]) + "\n")
 		}
 	}
 
@@ -803,16 +814,16 @@ func splitGoFile(filename string) {
 		switch d := decl.(type) {
 		case *ast.GenDecl:
 			if d.Tok == token.VAR || d.Tok == token.TYPE {
-				varsAndStructs += string(content[d.Pos()-1 : d.End()])
+				varsAndStructs += string(content[d.Pos()-1 : d.End()]) + "\n"
 			}
 		case *ast.FuncDecl:
 			name := d.Name.Name
-			functions[name] = string(content[d.Pos()-1 : d.End()])
+			functions[name] = string(content[d.Pos()-1 : d.End()]) + "\n"
 		}
 	}
 
 	// Write .gopart files
-	writeGopart(baseDir, "imports.gopart", packageAndImports)
+	writeGopart(baseDir, "imports.gopart", packageAndImports.String())
 	writeGopart(baseDir, "varsandstructs.gopart", varsAndStructs)
 	for name, content := range functions {
 		writeGopart(baseDir, name+".gopart", content)

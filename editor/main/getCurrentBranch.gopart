@@ -6,3 +6,4 @@ func getCurrentBranch() string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
