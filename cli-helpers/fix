@@ -1,0 +1,4 @@
+#!/bin/bash
+
+set -a; source ../gopilot/.env; set +a
+../gopilot/gopilot -fix-build
