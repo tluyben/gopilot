@@ -148,6 +148,14 @@ func loadConfig() Config {
 		os.Exit(0)
 	}
 
+	if config.Remove && config.Prompt == "" {
+		currentBranch := getCurrentBranch()
+		removeAndCleanup(currentBranch)
+		// exit
+		os.Exit(0)
+	}
+
+
 	if config.Prompt == "" && !config.Remove && config.SplitFiles == "" && config.UnsplitFiles == "" {
 		log.Fatal("Prompt is required")
 	}
@@ -465,9 +473,17 @@ func readInteractivePrompt() string {
 }
 
 func removeAndCleanup(branchName string) {
-	// Checkout main
-	cmd := exec.Command("git", "checkout", "main")
+	if (branchName == "main") {
+		log.Fatal("Cannot delete main branch.")
+	}
+	cmd := exec.Command("git", "stash")
 	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatal("Error while stashing changes:", string(output), err)
+	}
+	// Checkout main
+	cmd = exec.Command("git", "checkout", "main")
+	output, err = cmd.CombinedOutput()
 	if err != nil {
 		log.Fatal("Error checking out main branch:", string(output), err)
 	}
@@ -805,6 +821,10 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 }
 
 func mergeAndCleanup(branchName string) {
+
+	if (branchName == "main") {
+		log.Fatal("Cannot delete main branch.")
+	}
 	// Check for uncommitted changes
 	cmd := exec.Command("git", "status", "--porcelain")
 	output, err := cmd.Output()
