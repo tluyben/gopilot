@@ -34,6 +34,8 @@ type FileContent struct {
 	FilePath string `json:"filepath"`
 	Content  string `json:"content,omitempty"`
 	Delete   bool   `json:"delete,omitempty"`
+	InsertBefore string `json:"insert-before,omitempty"`
+	InsertAfter string `json:"insert-after,omitempty"`
 }
 
 type Config struct {
@@ -576,17 +578,15 @@ func applyChanges(changes []FileContent) {
 	}
 }
 
-func getInsertionPoint(content string) (bool, string) {
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "// insert-before: ") {
-			return true, strings.TrimPrefix(line, "// insert-before: ")
-		}
-		if strings.HasPrefix(line, "// insert-after: ") {
-			return false, strings.TrimPrefix(line, "// insert-after: ")
-		}
+func getInsertionPoint(content FileContent) (bool, string) {
+	if content.InsertBefore != "" {
+		return true, content.InsertBefore
+	} else if content.InsertAfter != "" {
+		return false, content.InsertAfter
+	} else {
+		return false, ""
 	}
-	return false, ""
+
 }
 
 func readFiles(fileList string) []FileContent {
@@ -1054,7 +1054,7 @@ func parseChanges(config Config, rawChanges string) []FileContent {
 		var insertionPoint string
 		var insertBefore bool
 
-		if insertBefore, insertionPoint = getInsertionPoint(change.Content); insertBefore || insertionPoint != "" {
+		if insertBefore, insertionPoint = getInsertionPoint(change); insertBefore || insertionPoint != "" {
 			baseDir := filepath.Dir(change.FilePath)
 			splitOrderPath := filepath.Join(baseDir, "splitorder.json")
 			splitOrder, err := readSplitOrder(splitOrderPath)
@@ -1075,7 +1075,7 @@ func parseChanges(config Config, rawChanges string) []FileContent {
 }
 
 func readSplitOrder(path string) ([]string, error) {
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
