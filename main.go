@@ -125,7 +125,7 @@ func buildSucceeds() bool {
 	return true
 }
 
-func calculateCost(response openai.ChatCompletionResponse) float64 {
+func calculateCost(response openai.ChatCompletionResponse, inputTokens int) float64 {
 	var outputTokens int
 	var cost float64
 
@@ -135,9 +135,9 @@ func calculateCost(response openai.ChatCompletionResponse) float64 {
 	// Calculate cost based on model
 	switch response.Model {
 	case "claude-3-sonnet-20240229":
-		cost = float64(outputTokens) * 15.0 / 1e6
+		cost = (float64(inputTokens) * 3.0 / 1e6) + (float64(outputTokens) * 15.0 / 1e6)
 	case "claude-3-haiku-20240307":
-		cost = float64(outputTokens) * 1.25 / 1e6
+		cost = (float64(inputTokens) * 0.25 / 1e6) + (float64(outputTokens) * 1.25 / 1e6)
 	default:
 		// Default cost calculation if model is not recognized
 		cost = 0.01
@@ -198,7 +198,8 @@ func (w *WrappedOpenAIClient) CreateChatCompletion(ctx context.Context, request 
 	response, err := w.client.CreateChatCompletion(ctx, request)
 	if err == nil {
 		currentSession.Requests++
-		currentSession.TotalCost += calculateCost(response)
+		inputTokens := len(request.Messages[len(request.Messages)-1].Content)
+		currentSession.TotalCost += calculateCost(response, inputTokens)
 	}
 	return response, err
 }
