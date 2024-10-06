@@ -56,127 +56,15 @@ type Config struct {
 	UnsplitFiles    string
 }
 
-func isPackageInModFile(modFile *modfile.File, packageName string) bool {
-	for _, req := range modFile.Require {
-		if strings.HasPrefix(packageName, req.Mod.Path) {
-			return true
-		}
-	}
-	return false
+type Session struct {
+	TotalCost float64
+	Requests  int
 }
 
-func commitChanges(config Config) {
-	commitMsg := generateCommitMessage(config)
-	cmd := exec.Command("git", "add", ".")
-	err := cmd.Run()
-	if err != nil {
-		log.Fatal(err)
-	}
+var currentSession Session
 
-	cmd = exec.Command("git", "commit", "-m", commitMsg)
-	err = cmd.Run()
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func addFileContent(files *[]FileContent, path string) {
-	if info, err := os.Stat(path); err == nil {
-		if info.IsDir() {
-			err := filepath.Walk(path, func(subpath string, subinfo os.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-				if !subinfo.IsDir() && !strings.Contains(subpath, ".git") {
-					content, err := ioutil.ReadFile(subpath)
-					if err != nil {
-						log.Printf("Error reading file %s: %v", subpath, err)
-						return nil
-					}
-					*files = append(*files, FileContent{FilePath: subpath, Content: string(content)})
-				}
-				return nil
-			})
-			if err != nil {
-				log.Printf("Error walking directory %s: %v", path, err)
-			}
-		} else {
-			content, err := ioutil.ReadFile(path)
-			if err != nil {
-				log.Printf("Error reading file %s: %v", path, err)
-				return
-			}
-			*files = append(*files, FileContent{FilePath: path, Content: string(content)})
-		}
-	} else {
-		log.Printf("Error accessing file or directory %s: %v", path, err)
-	}
-}
-
-func loadConfig() Config {
-	godotenv.Load()
-
-	config := Config{
-		OrBase:  os.Getenv("OR_BASE"),
-		OrToken: os.Getenv("OR_TOKEN"),
-		OrLow:   os.Getenv("OR_LOW"),
-		OrHigh:  os.Getenv("OR_HIGH"),
-	}
-
-	if config.OrBase == "" {
-		config.OrBase = "https://openrouter.ai/api/v1/chat/completions"
-	}
-
-	flag.StringVar(&config.Files, "files", "", "Comma-separated list of files to process")
-	flag.StringVar(&config.Prompt, "prompt", "", "User prompt for changes")
-	flag.StringVar(&config.BranchPrompt, "branchprompt", "", "File containing the branch name prompt")
-	flag.StringVar(&config.ChangesPrompt, "changesprompt", "", "File containing the changes prompt")
-	flag.StringVar(&config.CommitMsgPrompt, "commitmsgprompt", "", "File containing the commit message prompt")
-	flag.StringVar(&config.FixJsonPrompt, "fixjsonprompt", "", "File containing the fix JSON prompt")
-	flag.BoolVar(&config.Merge, "merge", false, "Merge changes into main and delete the branch")
-	flag.BoolVar(&config.Remove, "rm", false, "Delete the current branch and move back to main branch")
-	flag.StringVar(&config.SplitFiles, "split", "", "Comma-separated list of Go files to split into .gopart files")
-	flag.StringVar(&config.UnsplitFiles, "unsplit", "", "Comma-separated list of Go files to recreate from .gopart files")
-
-	// Add the new flag for interactive prompt
-	interactive := flag.Bool("inter", false, "Use interactive prompt")
-
-	flag.Parse()
-
-	if config.OrBase == "" || config.OrToken == "" || config.OrLow == "" || config.OrHigh == "" {
-		log.Fatal("Missing required environment variables")
-	}
-
-	// If interactive mode is enabled, read the prompt from stdin
-	if *interactive {
-		config.Prompt = readInteractivePrompt()
-	}
-
-	if config.Merge && config.Prompt == "" {
-		currentBranch := getCurrentBranch()
-		mergeAndCleanup(currentBranch)
-		// exit
-		os.Exit(0)
-	}
-
-	if config.Prompt == "" && !config.Remove && config.SplitFiles == "" && config.UnsplitFiles == "" {
-		log.Fatal("Prompt is required")
-	}
-
-	// Get the project name from the current directory
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatal("Error getting current working directory:", err)
-	}
-	config.ProjectName = filepath.Base(cwd)
-
-	return config
-}
-
-func createOpenAIClient(config Config) *openai.Client {
-	_config := openai.DefaultConfig(config.OrToken)
-	_config.BaseURL = config.OrBase
-	return openai.NewClientWithConfig(_config)
+type WrappedOpenAIClient struct {
+	client *openai.Client
 }
 
 func dependenciesNeedUpdate() bool {
@@ -213,6 +101,106 @@ func dependenciesNeedUpdate() bool {
 	}
 
 	return false
+}
+
+func splitGoFiles(fileList string) {
+	files := strings.Split(fileList, ",")
+	for _, file := range files {
+		splitGoFile(strings.TrimSpace(file))
+	}
+}
+
+func buildSucceeds() bool {
+	cmd := exec.Command("make", "build")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Build failed. Error output:")
+		fmt.Println(stderr.String())
+		return false
+	}
+
+	return true
+}
+
+func calculateCost(response openai.ChatCompletionResponse) float64 {
+	var outputTokens int
+	var cost float64
+
+	// Count output tokens
+	outputTokens = len(response.Choices[0].Message.Content)
+
+	// Calculate cost based on model
+	switch response.Model {
+	case "claude-3-sonnet-20240229":
+		cost = float64(outputTokens) * 15.0 / 1e6
+	case "claude-3-haiku-20240307":
+		cost = float64(outputTokens) * 1.25 / 1e6
+	default:
+		// Default cost calculation if model is not recognized
+		cost = 0.01
+	}
+
+	return cost
+}
+
+func checkGoVersion() {
+	constraint := "1.21"
+	currentVersion := runtime.Version()
+	if !strings.HasPrefix(currentVersion, "go1.") {
+		log.Fatalf("Unsupported Go version: %s. Go 1.21 or higher is required.", currentVersion)
+	}
+	versionNumber := strings.TrimPrefix(currentVersion, "go")
+	if versionNumber < constraint {
+		log.Fatalf("Go version %s is required, but you have %s. Please upgrade your Go installation.", constraint, currentVersion)
+	}
+}
+
+func checkoutBranch(branchName string) {
+	cmd := exec.Command("git", "checkout", "-b", branchName)
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println(err, cmd, " in checkoutBranch, not fatal")
+		cmd := exec.Command("git", "checkout", branchName)
+		cmd.Run()
+		//log.Fatal(err, cmd, " in checkoutBranch")
+	}
+}
+
+func commitChanges(config Config) {
+	commitMsg := generateCommitMessage(config)
+	cmd := exec.Command("git", "add", ".")
+	err := cmd.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", commitMsg)
+	err = cmd.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func createOpenAIClient(config Config) *WrappedOpenAIClient {
+	_config := openai.DefaultConfig(config.OrToken)
+	_config.BaseURL = config.OrBase
+	client := openai.NewClientWithConfig(_config)
+
+	return &WrappedOpenAIClient{
+		client: client,
+	}
+}
+
+func (w *WrappedOpenAIClient) CreateChatCompletion(ctx context.Context, request openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+	response, err := w.client.CreateChatCompletion(ctx, request)
+	if err == nil {
+		currentSession.Requests++
+		currentSession.TotalCost += calculateCost(response)
+	}
+	return response, err
 }
 
 func ensureGoimportsInstalled() {
@@ -330,62 +318,67 @@ func generateBranchName(config Config, files []FileContent) string {
 	return strings.TrimSpace(resp.Choices[0].Message.Content)
 }
 
-func generateChanges(config Config, files []FileContent) []FileContent {
-	fmt.Println("Generating changes...")
+func loadConfig() Config {
+	godotenv.Load()
 
-	client := createOpenAIClient(config)
+	config := Config{
+		OrBase:  os.Getenv("OR_BASE"),
+		OrToken: os.Getenv("OR_TOKEN"),
+		OrLow:   os.Getenv("OR_LOW"),
+		OrHigh:  os.Getenv("OR_HIGH"),
+	}
 
-	promptContent := getPromptContent(config.ChangesPrompt, "prompts/changes.txt")
-	tmpl, err := template.New("changes").Parse(promptContent)
+	if config.OrBase == "" {
+		config.OrBase = "https://openrouter.ai/api/v1/chat/completions"
+	}
+
+	flag.StringVar(&config.Files, "files", "", "Comma-separated list of files to process")
+	flag.StringVar(&config.Prompt, "prompt", "", "User prompt for changes")
+	flag.StringVar(&config.BranchPrompt, "branchprompt", "", "File containing the branch name prompt")
+	flag.StringVar(&config.ChangesPrompt, "changesprompt", "", "File containing the changes prompt")
+	flag.StringVar(&config.CommitMsgPrompt, "commitmsgprompt", "", "File containing the commit message prompt")
+	flag.StringVar(&config.FixJsonPrompt, "fixjsonprompt", "", "File containing the fix JSON prompt")
+	flag.BoolVar(&config.Merge, "merge", false, "Merge changes into main and delete the branch")
+	flag.BoolVar(&config.Remove, "rm", false, "Delete the current branch and move back to main branch")
+	flag.StringVar(&config.SplitFiles, "split", "", "Comma-separated list of Go files to split into .gopart files")
+	flag.StringVar(&config.UnsplitFiles, "unsplit", "", "Comma-separated list of Go files to recreate from .gopart files")
+
+	// Add the new flag for interactive prompt
+	interactive := flag.Bool("inter", false, "Use interactive prompt")
+
+	flag.Parse()
+
+	if config.OrBase == "" || config.OrToken == "" || config.OrLow == "" || config.OrHigh == "" {
+		log.Fatal("Missing required environment variables")
+	}
+
+	// If interactive mode is enabled, read the prompt from stdin
+	if *interactive {
+		config.Prompt = readInteractivePrompt()
+	}
+
+	if config.Merge && config.Prompt == "" {
+		currentBranch := getCurrentBranch()
+		mergeAndCleanup(currentBranch)
+		// exit
+		os.Exit(0)
+	}
+
+	if config.Prompt == "" && !config.Remove && config.SplitFiles == "" && config.UnsplitFiles == "" {
+		log.Fatal("Prompt is required")
+	}
+
+	// Get the project name from the current directory
+	cwd, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err, "in generateChanges: template parsing")
+		log.Fatal("Error getting current working directory:", err)
 	}
+	config.ProjectName = filepath.Base(cwd)
 
-	filesJSON, _ := json.Marshal(files)
-	var promptBuffer bytes.Buffer
-	err = tmpl.Execute(&promptBuffer, map[string]string{
-		"Prompt":      config.Prompt,
-		"Files":       string(filesJSON),
-		"ProjectName": config.ProjectName,
-	})
-	if err != nil {
-		log.Fatal(err, "in generateChanges: template execution")
-	}
+	// Initialize the current session
+	currentSession = Session{TotalCost: 0, Requests: 0}
 
-	stream, err := client.CreateChatCompletionStream(
-		context.Background(),
-		openai.ChatCompletionRequest{
-			Model: config.OrHigh,
-			Messages: []openai.ChatCompletionMessage{
-				{
-					Role:    openai.ChatMessageRoleUser,
-					Content: promptBuffer.String(),
-				},
-			},
-		},
-	)
-
-	if err != nil {
-		log.Fatal(err, "in generateChanges")
-	}
-	defer stream.Close()
-
-	var fullResponse strings.Builder
-	for {
-		response, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			log.Fatal("Stream error:", err)
-		}
-		fullResponse.WriteString(response.Choices[0].Delta.Content)
-		fmt.Print(response.Choices[0].Delta.Content)
-	}
-
-	fmt.Println("\nRaw changes suggestion:", fullResponse.String())
-
-	return parseChanges(config, fullResponse.String())
+	return config
 }
 
 func generateCommitMessage(config Config) string {
@@ -468,30 +461,91 @@ func getPromptContent(userFile, defaultFile string) string {
 	return string(content)
 }
 
-func buildSucceeds() bool {
-	cmd := exec.Command("make", "build")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println("Build failed. Error output:")
-		fmt.Println(stderr.String())
-		return false
+func (w *WrappedOpenAIClient) CreateChatCompletionStream(ctx context.Context, request openai.ChatCompletionRequest) (*openai.ChatCompletionStream, error) {
+	stream, err := w.client.CreateChatCompletionStream(ctx, request)
+	if err == nil {
+		currentSession.Requests++
+		// Note: Cost calculation for streaming responses might need to be handled differently
 	}
-
-	return true
+	return stream, err
 }
 
-func checkoutBranch(branchName string) {
-	cmd := exec.Command("git", "checkout", "-b", branchName)
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println(err, cmd, " in checkoutBranch, not fatal")
-		cmd := exec.Command("git", "checkout", branchName)
-		cmd.Run()
-		//log.Fatal(err, cmd, " in checkoutBranch")
+func applyChanges(changes []FileContent) {
+	for _, change := range changes {
+		if change.Delete {
+			err := os.Remove(change.FilePath)
+			if err != nil {
+				log.Printf("Error deleting file %s: %v", change.FilePath, err)
+			} else {
+				fmt.Printf("Deleted file: %s\n", change.FilePath)
+			}
+		} else {
+			err := ioutil.WriteFile(change.FilePath, []byte(change.Content), 0644)
+			if err != nil {
+				log.Printf("Error writing file %s: %v", change.FilePath, err)
+			} else {
+				fmt.Printf("Updated file: %s\n", change.FilePath)
+			}
+		}
 	}
+}
+
+func generateChanges(config Config, files []FileContent) []FileContent {
+	fmt.Println("Generating changes...")
+
+	client := createOpenAIClient(config)
+
+	promptContent := getPromptContent(config.ChangesPrompt, "prompts/changes.txt")
+	tmpl, err := template.New("changes").Parse(promptContent)
+	if err != nil {
+		log.Fatal(err, "in generateChanges: template parsing")
+	}
+
+	filesJSON, _ := json.Marshal(files)
+	var promptBuffer bytes.Buffer
+	err = tmpl.Execute(&promptBuffer, map[string]string{
+		"Prompt":      config.Prompt,
+		"Files":       string(filesJSON),
+		"ProjectName": config.ProjectName,
+	})
+	if err != nil {
+		log.Fatal(err, "in generateChanges: template execution")
+	}
+
+	stream, err := client.CreateChatCompletionStream(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: config.OrHigh,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: promptBuffer.String(),
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		log.Fatal(err, "in generateChanges")
+	}
+	defer stream.Close()
+
+	var fullResponse strings.Builder
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			log.Fatal("Stream error:", err)
+		}
+		fullResponse.WriteString(response.Choices[0].Delta.Content)
+		fmt.Print(response.Choices[0].Delta.Content)
+	}
+
+	fmt.Println("\nRaw changes suggestion:", fullResponse.String())
+
+	return parseChanges(config, fullResponse.String())
 }
 
 func main() {
@@ -541,18 +595,9 @@ func main() {
 	} else {
 		fmt.Println("Build failed. Please fix the issues and try again.")
 	}
-}
 
-func checkGoVersion() {
-	constraint := "1.21"
-	currentVersion := runtime.Version()
-	if !strings.HasPrefix(currentVersion, "go1.") {
-		log.Fatalf("Unsupported Go version: %s. Go 1.21 or higher is required.", currentVersion)
-	}
-	versionNumber := strings.TrimPrefix(currentVersion, "go")
-	if versionNumber < constraint {
-		log.Fatalf("Go version %s is required, but you have %s. Please upgrade your Go installation.", constraint, currentVersion)
-	}
+	// Print session summary
+	fmt.Printf("Session summary:\nTotal requests: %d\nTotal cost: $%.2f\n", currentSession.Requests, currentSession.TotalCost)
 }
 
 func mergeAndCleanup(branchName string) {
@@ -589,49 +634,63 @@ func mergeAndCleanup(branchName string) {
 
 func parseChanges(config Config, rawChanges string) []FileContent {
 	var changes []FileContent
+
+	// first let's just try the naive way
+	err := json.Unmarshal([]byte(rawChanges), &changes)
+	if err == nil {
+		return changes
+	}
+
 	start := strings.Index(rawChanges, "[")
 	if start == -1 {
 		return changes
 	}
 
 	rawJSON := rawChanges[start:]
-	var validJSON string
+	var validJSON strings.Builder
 	depth := 0
 	inString := false
 	escaped := false
+	objectStarted := false
 
-	for i, char := range rawJSON {
+	for _, char := range rawJSON {
 		if inString {
 			if !escaped && char == '"' {
 				inString = false
 			}
 			escaped = char == '\\' && !escaped
-		} else if char == '"' {
+		} else if char == '"' && !escaped {
 			inString = true
-		} else if char == '{' {
+		} else if char == '{' && !inString {
 			depth++
-		} else if char == '}' {
+			objectStarted = true
+		} else if char == '}' && !inString {
 			depth--
-			if depth == 0 {
-				validJSON = rawJSON[:i+1]
+			if depth == 0 && objectStarted {
+				validJSON.WriteRune(char)
 				break
 			}
 		}
+
+		if objectStarted {
+			validJSON.WriteRune(char)
+		}
 	}
 
-	if validJSON == "" {
+	validJSONString := validJSON.String()
+	if validJSONString == "" {
 		return changes
 	}
 
-	err := json.Unmarshal([]byte(validJSON), &changes)
+	err = json.Unmarshal([]byte(validJSONString), &changes)
 	if err != nil {
 		fmt.Println("Error unmarshalling changes:", err)
 		return changes
 	}
 
 	// If there are more changes to process, recursively call generateChanges
-	if len(validJSON) < len(rawJSON) {
-		additionalChanges := generateAdditionalChanges(config, changes, rawJSON[len(validJSON):])
+	if len(validJSONString) < len(rawJSON) {
+		additionalChanges := generateAdditionalChanges(config, changes, rawJSON[len(validJSONString):])
 		changes = append(changes, additionalChanges...)
 	}
 
@@ -833,11 +892,13 @@ func splitGoFile(filename string) {
 	fmt.Printf("Split %s into .gopart files in %s\n", filename, baseDir)
 }
 
-func splitGoFiles(fileList string) {
-	files := strings.Split(fileList, ",")
-	for _, file := range files {
-		splitGoFile(strings.TrimSpace(file))
+func isPackageInModFile(modFile *modfile.File, packageName string) bool {
+	for _, req := range modFile.Require {
+		if strings.HasPrefix(packageName, req.Mod.Path) {
+			return true
+		}
 	}
+	return false
 }
 
 func unsplitGoFile(filename string) {
@@ -915,23 +976,36 @@ func updateDependencies() {
 	}
 }
 
-func applyChanges(changes []FileContent) {
-	for _, change := range changes {
-		if change.Delete {
-			err := os.Remove(change.FilePath)
+func addFileContent(files *[]FileContent, path string) {
+	if info, err := os.Stat(path); err == nil {
+		if info.IsDir() {
+			err := filepath.Walk(path, func(subpath string, subinfo os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !subinfo.IsDir() && !strings.Contains(subpath, ".git") {
+					content, err := ioutil.ReadFile(subpath)
+					if err != nil {
+						log.Printf("Error reading file %s: %v", subpath, err)
+						return nil
+					}
+					*files = append(*files, FileContent{FilePath: subpath, Content: string(content)})
+				}
+				return nil
+			})
 			if err != nil {
-				log.Printf("Error deleting file %s: %v", change.FilePath, err)
-			} else {
-				fmt.Printf("Deleted file: %s\n", change.FilePath)
+				log.Printf("Error walking directory %s: %v", path, err)
 			}
 		} else {
-			err := ioutil.WriteFile(change.FilePath, []byte(change.Content), 0644)
+			content, err := ioutil.ReadFile(path)
 			if err != nil {
-				log.Printf("Error writing file %s: %v", change.FilePath, err)
-			} else {
-				fmt.Printf("Updated file: %s\n", change.FilePath)
+				log.Printf("Error reading file %s: %v", path, err)
+				return
 			}
+			*files = append(*files, FileContent{FilePath: path, Content: string(content)})
 		}
+	} else {
+		log.Printf("Error accessing file or directory %s: %v", path, err)
 	}
 }
 
