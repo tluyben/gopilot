@@ -19,17 +19,16 @@ func splitGoFile(filename string) {
 		log.Fatalf("Error creating directory %s: %v", baseDir, err)
 	}
 
-	// Split the file into parts
-	imports := ""
-	varsAndStructs := ""
-	functions := make(map[string]string)
-
-	// Extract imports
+	// Extract package declaration and imports
+	packageAndImports := fmt.Sprintf("package %s\n\n", f.Name.Name)
 	for _, decl := range f.Decls {
 		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			imports += string(content[gen.Pos()-1 : gen.End()])
+			packageAndImports += string(content[gen.Pos()-1 : gen.End()])
 		}
 	}
+
+	varsAndStructs := ""
+	functions := make(map[string]string)
 
 	// Extract vars, structs, and functions
 	for _, decl := range f.Decls {
@@ -45,7 +44,7 @@ func splitGoFile(filename string) {
 	}
 
 	// Write .gopart files
-	writeGopart(baseDir, "imports.gopart", imports)
+	writeGopart(baseDir, "imports.gopart", packageAndImports)
 	writeGopart(baseDir, "varsandstructs.gopart", varsAndStructs)
 	for name, content := range functions {
 		writeGopart(baseDir, name+".gopart", content)
