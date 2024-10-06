@@ -44,11 +44,18 @@ type Config struct {
 	FixJsonPrompt   string
 	ProjectName     string
 	Merge           bool
+	Remove          bool
 }
 
 func main() {
 	checkGoVersion()
 	config := loadConfig()
+
+	if config.Remove {
+		currentBranch := getCurrentBranch()
+		removeAndCleanup(currentBranch)
+		os.Exit(0)
+	}
 
 	files := readFiles(config.Files)
 	branchName := generateBranchName(config, files)
@@ -230,6 +237,7 @@ func loadConfig() Config {
 	flag.StringVar(&config.CommitMsgPrompt, "commitmsgprompt", "", "File containing the commit message prompt")
 	flag.StringVar(&config.FixJsonPrompt, "fixjsonprompt", "", "File containing the fix JSON prompt")
 	flag.BoolVar(&config.Merge, "merge", false, "Merge changes into main and delete the branch")
+	flag.BoolVar(&config.Remove, "rm", false, "Delete the current branch and move back to main branch")
 
 	// Add the new flag for interactive prompt
 	interactive := flag.Bool("inter", false, "Use interactive prompt")
@@ -252,7 +260,7 @@ func loadConfig() Config {
 		os.Exit(0)
 	}
 
-	if config.Prompt == "" {
+	if config.Prompt == "" && !config.Remove {
 		log.Fatal("Prompt is required")
 	}
 
@@ -453,6 +461,7 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 	if err != nil {
 		fmt.Println("Error unmarshalling changes, attempting to fix...")
 		fixedChanges := fixChanges(config, resp.Choices[0].Message.Content)
+		fmt.Println("fixed changes suggestion: ", fixedChanges)
 		err = json.Unmarshal([]byte(fixedChanges), &changes)
 		if err != nil {
 			log.Fatal(err, "in generateChanges: unmarshal after fix attempt")
@@ -638,4 +647,22 @@ func mergeAndCleanup(branchName string) {
 	}
 
 	fmt.Printf("Branch %s merged into main, pushed, and deleted.\n", branchName)
+}
+
+func removeAndCleanup(branchName string) {
+	// Checkout main
+	cmd := exec.Command("git", "checkout", "main")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatal("Error checking out main branch:", string(output), err)
+	}
+
+	// Delete the branch
+	cmd = exec.Command("git", "branch", "-D", branchName)
+	err = cmd.Run()
+	if err != nil {
+		log.Fatal("Error deleting branch:", err)
+	}
+
+	fmt.Printf("Branch %s deleted and moved back to main branch.\n", branchName)
 }
