@@ -455,13 +455,6 @@ func getCurrentBranch() string {
 }
 
 
-func getFirstKeyword(s string) string {
-	words := strings.Fields(s)
-	if len(words) > 0 {
-		return words[0]
-	}
-	return ""
-}
 
 
 func getPromptContent(userFile, defaultFile string) string {
@@ -766,81 +759,6 @@ func showDiff() {
 }
 
 
-func splitGoFile(filename string) {
-	// Read the Go file
-	content, err := ioutil.ReadFile(filename)
-	if err != nil {
-		log.Fatalf("Error reading file %s: %v", filename, err)
-	}
-
-	// Parse the Go file
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filename, content, parser.ParseComments)
-	if err != nil {
-		log.Fatalf("Error parsing file %s: %v", filename, err)
-	}
-
-	// Create the editor directory
-	baseDir := filepath.Join("editor", strings.TrimSuffix(filename, ".go"))
-	err = os.MkdirAll(baseDir, 0755)
-	if err != nil {
-		log.Fatalf("Error creating directory %s: %v", baseDir, err)
-	}
-
-	// Extract package declaration, imports, and //go:embed directives
-	var packageAndImports strings.Builder
-	packageAndImports.WriteString(fmt.Sprintf("package %s\n\n", f.Name.Name))
-
-	// Handle //go:embed directives
-	for _, cg := range f.Comments {
-		for _, c := range cg.List {
-			if strings.HasPrefix(c.Text, "//go:embed") {
-				packageAndImports.WriteString(c.Text + "\n")
-			}
-		}
-	}
-
-	for _, decl := range f.Decls {
-		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			packageAndImports.WriteString(string(content[gen.Pos()-1 : gen.End()]) + "\n")
-		}
-	}
-
-	varsAndStructs := ""
-	functions := make(map[string]string)
-
-	// Extract vars, structs, and functions
-	for _, decl := range f.Decls {
-		switch d := decl.(type) {
-		case *ast.GenDecl:
-			if d.Tok == token.VAR || d.Tok == token.TYPE {
-				varsAndStructs += string(content[d.Pos()-1 : d.End()]) + "\n"
-			}
-		case *ast.FuncDecl:
-			name := d.Name.Name
-			functions[name] = string(content[d.Pos()-1 : d.End()]) + "\n"
-		}
-	}
-
-	// Write .gopart files
-	writeGopart(baseDir, "imports.gopart", packageAndImports.String())
-	writeGopart(baseDir, "varsandstructs.gopart", varsAndStructs)
-	for name, content := range functions {
-		writeGopart(baseDir, name+".gopart", content)
-	}
-
-	fmt.Printf("Split %s into .gopart files in %s\n", filename, baseDir)
-}
-
-
-func splitGoFiles(fileList string) {
-	files := strings.Split(fileList, ",")
-	for _, file := range files {
-		splitGoFile(strings.TrimSpace(file))
-	}
-}
-
-
 func unsplitGoFile(filename string) {
 	baseDir := filepath.Join("editor", strings.TrimSuffix(filename, ".go"))
 	
@@ -869,13 +787,20 @@ func unsplitGoFile(filename string) {
 	// Sort the parts to ensure correct order
 	sort.Slice(parts, func(i, j int) bool {
 		order := map[string]int{"package": 0, "import": 1, "var": 2, "const": 3, "type": 4, "func": 5}
-		for keyword, priority := range order {
-			if strings.HasPrefix(strings.TrimSpace(parts[i]), keyword) {
-				return priority < order[getFirstKeyword(parts[j])]
-			}
-			if strings.HasPrefix(strings.TrimSpace(parts[j]), keyword) {
-				return order[getFirstKeyword(parts[i])] < priority
-			}
+		iKeyword := getFirstKeyword(parts[i])
+		jKeyword := getFirstKeyword(parts[j])
+		
+		iPriority, iExists := order[iKeyword]
+		jPriority, jExists := order[jKeyword]
+		
+		if iExists && jExists {
+			return iPriority < jPriority
+		}
+		if iExists {
+			return true
+		}
+		if jExists {
+			return false
 		}
 		return false
 	})
@@ -891,6 +816,95 @@ func unsplitGoFile(filename string) {
 
 	fmt.Printf("Recreated %s from .gopart files in %s\n", filename, baseDir)
 }
+
+func getFirstKeyword(s string) string {
+	lines := strings.Split(s, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//go:embed") {
+			continue // Skip //go:embed lines when determining the first keyword
+		}
+		words := strings.Fields(trimmed)
+		if len(words) > 0 {
+			return words[0]
+		}
+	}
+	return ""
+}
+
+func splitGoFiles(fileList string) {
+	files := strings.Split(fileList, ",")
+	for _, file := range files {
+		splitGoFile(strings.TrimSpace(file))
+	}
+}
+
+func splitGoFile(filename string) {
+	// Read the Go file
+	content, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Fatalf("Error reading file %s: %v", filename, err)
+	}
+
+	// Parse the Go file
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, filename, content, parser.ParseComments)
+	if err != nil {
+		log.Fatalf("Error parsing file %s: %v", filename, err)
+	}
+
+	// Create the editor directory
+	baseDir := filepath.Join("editor", strings.TrimSuffix(filename, ".go"))
+	err = os.MkdirAll(baseDir, 0755)
+	if err != nil {
+		log.Fatalf("Error creating directory %s: %v", baseDir, err)
+	}
+
+	// Extract package declaration and imports
+	var packageAndImports strings.Builder
+	packageAndImports.WriteString(fmt.Sprintf("package %s\n\n", f.Name.Name))
+
+	for _, decl := range f.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			packageAndImports.WriteString(string(content[gen.Pos()-1 : gen.End()]) + "\n")
+		}
+	}
+
+	var varsAndStructs strings.Builder
+	functions := make(map[string]string)
+
+	// Extract vars, structs, and functions
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			if d.Tok == token.VAR || d.Tok == token.TYPE {
+				// Check for //go:embed directives
+				if d.Doc != nil {
+					for _, c := range d.Doc.List {
+						if strings.HasPrefix(c.Text, "//go:embed") {
+							varsAndStructs.WriteString(c.Text + "\n")
+						}
+					}
+				}
+				varsAndStructs.WriteString(string(content[d.Pos()-1 : d.End()]) + "\n\n")
+			}
+		case *ast.FuncDecl:
+			name := d.Name.Name
+			functions[name] = string(content[d.Pos()-1 : d.End()]) + "\n"
+		}
+	}
+
+	// Write .gopart files
+	writeGopart(baseDir, "imports.gopart", packageAndImports.String())
+	writeGopart(baseDir, "varsandstructs.gopart", varsAndStructs.String())
+	for name, content := range functions {
+		writeGopart(baseDir, name+".gopart", content)
+	}
+
+	fmt.Printf("Split %s into .gopart files in %s\n", filename, baseDir)
+}
+
+
 
 
 func unsplitGoFiles(fileList string) {
