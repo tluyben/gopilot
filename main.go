@@ -41,6 +41,7 @@ type Config struct {
 	BranchPrompt    string
 	ChangesPrompt   string
 	CommitMsgPrompt string
+	FixJsonPrompt   string
 	ProjectName     string
 	Merge           bool
 }
@@ -227,6 +228,7 @@ func loadConfig() Config {
 	flag.StringVar(&config.BranchPrompt, "branchprompt", "", "File containing the branch name prompt")
 	flag.StringVar(&config.ChangesPrompt, "changesprompt", "", "File containing the changes prompt")
 	flag.StringVar(&config.CommitMsgPrompt, "commitmsgprompt", "", "File containing the commit message prompt")
+	flag.StringVar(&config.FixJsonPrompt, "fixjsonprompt", "", "File containing the fix JSON prompt")
 	flag.BoolVar(&config.Merge, "merge", false, "Merge changes into main and delete the branch")
 
 	// Add the new flag for interactive prompt
@@ -465,7 +467,19 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 func fixChanges(config Config, rawChanges string) string {
 	client := createOpenAIClient(config)
 
-	prompt := fmt.Sprintf("The following JSON is invalid. Please fix it so it matches the desired output format for file changes:\n\n%s\n\nThe correct format should be a JSON array of objects, each with 'filepath' and 'content' fields.", rawChanges)
+	promptContent := getPromptContent(config.FixJsonPrompt, "prompts/fixjson.txt")
+	tmpl, err := template.New("fixjson").Parse(promptContent)
+	if err != nil {
+		log.Fatal(err, "in fixChanges: template parsing")
+	}
+
+	var promptBuffer bytes.Buffer
+	err = tmpl.Execute(&promptBuffer, map[string]string{
+		"RawChanges": rawChanges,
+	})
+	if err != nil {
+		log.Fatal(err, "in fixChanges: template execution")
+	}
 
 	resp, err := client.CreateChatCompletion(
 		context.Background(),
@@ -474,7 +488,7 @@ func fixChanges(config Config, rawChanges string) string {
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleUser,
-					Content: prompt,
+					Content: promptBuffer.String(),
 				},
 			},
 		},

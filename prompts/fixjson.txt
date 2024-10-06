@@ -1,0 +1,18 @@
+The following JSON is invalid. Please fix it so it matches the desired output format for file changes:
+
+{{.RawChanges}}
+
+The correct format should be a JSON array of objects, each with 'filepath' and 'content' fields. Here's an example of the correct format:
+
+[
+  {
+    "filepath": "main.go",
+    "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n"
+  },
+  {
+    "filepath": "README.md",
+    "content": "# My Project\n\nThis is a sample README file.\n"
+  }
+]
+
+Please provide the fixed JSON:
