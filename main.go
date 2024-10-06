@@ -46,11 +46,8 @@ type Config struct {
 }
 
 func main() {
-
-	
 	checkGoVersion()
 	config := loadConfig()
-
 
 	files := readFiles(config.Files)
 	branchName := generateBranchName(config, files)
@@ -452,12 +449,42 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 	var changes []FileContent
 	err = json.Unmarshal([]byte(resp.Choices[0].Message.Content), &changes)
 	if err != nil {
-		log.Fatal(err, "in generateChanges: unmarshal")
+		fmt.Println("Error unmarshalling changes, attempting to fix...")
+		fixedChanges := fixChanges(config, resp.Choices[0].Message.Content)
+		err = json.Unmarshal([]byte(fixedChanges), &changes)
+		if err != nil {
+			log.Fatal(err, "in generateChanges: unmarshal after fix attempt")
+		}
 	}
 
 	fmt.Println("changes suggestion: ", changes)
 
 	return changes
+}
+
+func fixChanges(config Config, rawChanges string) string {
+	client := createOpenAIClient(config)
+
+	prompt := fmt.Sprintf("The following JSON is invalid. Please fix it so it matches the desired output format for file changes:\n\n%s\n\nThe correct format should be a JSON array of objects, each with 'filepath' and 'content' fields.", rawChanges)
+
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: config.OrLow,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: prompt,
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		log.Fatal(err, "in fixChanges")
+	}
+
+	return resp.Choices[0].Message.Content
 }
 
 func applyChanges(changes []FileContent) {
