@@ -903,30 +903,43 @@ func generateBranchName(config Config, files []FileContent) string {
 }
 
 func processLocations(changes []FileContent) []FileContent {
-	for i, change := range changes {
-		var insertionPoint string
-		var insertBefore bool
+    for i, change := range changes {
+        baseDir := filepath.Dir(change.FilePath)
+        splitOrderPath := filepath.Join(baseDir, "splitorder.json")
+        splitOrder, err := readSplitOrder(splitOrderPath)
+        if err != nil {
+            // If splitorder.json doesn't exist, create it with the current file
+            splitOrder = []string{filepath.Base(change.FilePath)}
+        } else {
+            insertBefore, insertionPoint := getInsertionPoint(change)
+            fileName := filepath.Base(change.FilePath)
+            
+            if insertBefore || insertionPoint != "" {
+                splitOrder = updateSplitOrder(splitOrder, fileName, insertionPoint, insertBefore)
+            } else {
+                // Add the new file at the end if it's not already in the split order
+                if !contains(splitOrder, fileName) {
+                    splitOrder = append(splitOrder, fileName)
+                }
+            }
+        }
+        writeSplitOrder(splitOrderPath, splitOrder)
 
-		if insertBefore, insertionPoint = getInsertionPoint(change); insertBefore || insertionPoint != "" {
-			baseDir := filepath.Dir(change.FilePath)
-			splitOrderPath := filepath.Join(baseDir, "splitorder.json")
-			splitOrder, err := readSplitOrder(splitOrderPath)
-			if err != nil {
-				// If splitorder.json doesn't exist, create it with the current file
-				splitOrder = []string{filepath.Base(change.FilePath)}
-				writeSplitOrder(splitOrderPath, splitOrder)
-			} else {
-				newOrder := updateSplitOrder(splitOrder, filepath.Base(change.FilePath), insertionPoint, insertBefore)
-				writeSplitOrder(splitOrderPath, newOrder)
-			}
+        // Remove the insertion point from the content
+        changes[i].Content = removeInsertionPoint(change.Content)
+    }
 
-			// Remove the insertion point from the content
-			changes[i].Content = removeInsertionPoint(change.Content)
-			
-		}
-	}
+    return changes
+}
 
-	return changes
+// Helper function to check if a string slice contains a specific string
+func contains(slice []string, item string) bool {
+    for _, s := range slice {
+        if s == item {
+            return true
+        }
+    }
+    return false
 }
 
 func runGoModTidy() {
@@ -1191,15 +1204,15 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 		}
 	}
 
-	if newFileCount > 10 {
-		// Create a splitorder.json file
-		splitOrder := []string{"imports.gopart"}
-		splitOrderJSON, _ := json.Marshal(splitOrder)
-		changes = append(changes, FileContent{
-			FilePath: "editor/splitorder.json",
-			Content:  string(splitOrderJSON),
-		})
-	}
+	// if newFileCount > 10 {
+	// Create a splitorder.json file
+	// splitOrder := []string{"imports.gopart"}
+	// splitOrderJSON, _ := json.Marshal(splitOrder)
+	// changes = append(changes, FileContent{
+	// 	FilePath: "editor/splitorder.json",
+	// 	Content:  string(splitOrderJSON),
+	// })
+	// // }
 
 	return changes
 }
