@@ -457,43 +457,89 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 	fmt.Println("raw changes suggestion: ", resp.Choices[0].Message.Content)
 
 	var changes []FileContent
-	err = json.Unmarshal([]byte(resp.Choices[0].Message.Content), &changes)
-	if err != nil {
-		fmt.Println("Error unmarshalling changes, attempting to fix...")
-		fixedChanges := fixChanges(config, resp.Choices[0].Message.Content)
-		fmt.Println("fixed changes suggestion: ", fixedChanges)
-		err = json.Unmarshal([]byte(fixedChanges), &changes)
-		if err != nil {
-			log.Fatal(err, "in generateChanges: unmarshal after fix attempt")
-		}
-	}
+	changes = parseChanges(config, resp.Choices[0].Message.Content)
 
 	fmt.Println("changes suggestion: ", changes)
 
 	return changes
 }
 
-func fixChanges(config Config, rawChanges string) string {
-	client := createOpenAIClient(config)
-
-	promptContent := getPromptContent(config.FixJsonPrompt, "prompts/fixjson.txt")
-	tmpl, err := template.New("fixjson").Parse(promptContent)
-	if err != nil {
-		log.Fatal(err, "in fixChanges: template parsing")
+func parseChanges(config Config, rawChanges string) []FileContent {
+	var changes []FileContent
+	start := strings.Index(rawChanges, "[")
+	if start == -1 {
+		return changes
 	}
 
+	rawJSON := rawChanges[start:]
+	var validJSON string
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i, char := range rawJSON {
+		if inString {
+			if !escaped && char == '"' {
+				inString = false
+			}
+			escaped = char == '\\' && !escaped
+		} else if char == '"' {
+			inString = true
+		} else if char == '{' {
+			depth++
+		} else if char == '}' {
+			depth--
+			if depth == 0 {
+				validJSON = rawJSON[:i+1]
+				break
+			}
+		}
+	}
+
+	if validJSON == "" {
+		return changes
+	}
+
+	err := json.Unmarshal([]byte(validJSON), &changes)
+	if err != nil {
+		fmt.Println("Error unmarshalling changes:", err)
+		return changes
+	}
+
+	// If there are more changes to process, recursively call generateChanges
+	if len(validJSON) < len(rawJSON) {
+		additionalChanges := generateAdditionalChanges(config, changes, rawJSON[len(validJSON):])
+		changes = append(changes, additionalChanges...)
+	}
+
+	return changes
+}
+
+func generateAdditionalChanges(config Config, existingChanges []FileContent, remainingContent string) []FileContent {
+	client := createOpenAIClient(config)
+
+	promptContent := getPromptContent(config.ChangesPrompt, "prompts/changes.txt")
+	tmpl, err := template.New("changes").Parse(promptContent)
+	if err != nil {
+		log.Fatal(err, "in generateAdditionalChanges: template parsing")
+	}
+
+	existingChangesJSON, _ := json.Marshal(existingChanges)
 	var promptBuffer bytes.Buffer
 	err = tmpl.Execute(&promptBuffer, map[string]string{
-		"RawChanges": rawChanges,
+		"Prompt":           config.Prompt,
+		"ExistingChanges":  string(existingChangesJSON),
+		"RemainingContent": remainingContent,
+		"ProjectName":      config.ProjectName,
 	})
 	if err != nil {
-		log.Fatal(err, "in fixChanges: template execution")
+		log.Fatal(err, "in generateAdditionalChanges: template execution")
 	}
 
 	resp, err := client.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
-			Model: config.OrLow,
+			Model: config.OrHigh,
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleUser,
@@ -504,10 +550,12 @@ func fixChanges(config Config, rawChanges string) string {
 	)
 
 	if err != nil {
-		log.Fatal(err, "in fixChanges")
+		log.Fatal(err, "in generateAdditionalChanges")
 	}
 
-	return resp.Choices[0].Message.Content
+	fmt.Println("additional changes suggestion: ", resp.Choices[0].Message.Content)
+
+	return parseChanges(config, resp.Choices[0].Message.Content)
 }
 
 func applyChanges(changes []FileContent) {
