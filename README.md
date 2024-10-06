@@ -13,6 +13,7 @@ This project implements an AI-assisted Git workflow tool that leverages OpenAI's
 - Interactive prompt input mode
 - Automatic formatting of Go files using goimports
 - Option to automatically merge changes into main and delete the feature branch
+- Option to remove the current branch and move back to the main branch
 
 ## Prerequisites
 
@@ -82,6 +83,7 @@ Additional flags:
 - `-commitmsgprompt`: File containing custom commit message prompt
 - `-inter`: Use interactive prompt mode
 - `-merge`: Merge changes into main and delete the branch
+- `-rm`: Delete the current branch and move back to main branch
 
 Example:
 
@@ -106,6 +108,16 @@ make merge
 ```
 
 This will merge the current branch into main, push the changes, and delete the feature branch.
+
+### Removing Current Branch
+
+To remove the current branch and move back to the main branch, use the `-rm` flag:
+
+```
+gopilot -rm
+```
+
+This will checkout the main branch and delete the current feature branch.
 
 ## Customizing Prompts
 
