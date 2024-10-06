@@ -9,6 +9,7 @@ The project is structured with .gopart files in the editor directory. Each .go f
 Only modify the .gopart files that need changes. You don't need to provide the entire content of files that remain unchanged.
 
 Provide a valid JSON response containing only the changed .gopart files. Include the entire content of modified files. You can also delete files by setting the "delete" field to true.
+Make sure to include insert-before or insert-after for where to insert *new* functions. 
 
 Current project files:
 {{.Files}}
@@ -22,11 +23,17 @@ Example output:
   },
   {
     "filepath": "editor/main.go/newFunction.gopart",
-    "content": "func newFunction() {\n\tfmt.Println(\"This is a new function\")\n}\n"
+    "content": "func newFunction() {\n\tfmt.Println(\"This is a new function\")\n}\n",
+    "insert-after": "main"
   },
   {
     "filepath": "editor/main.go/oldFunction.gopart",
     "delete": true
+  },
+  {
+    "filepath": "editor/main.go/newFunction2.gopart",
+    "content": "func newFunction2() {\n\tfmt.Println(\"This is a new function\")\n}\n",
+    "insert-before": "newFunction"
   }
 ]
 
