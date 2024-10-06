@@ -19,7 +19,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"text/template"
 
@@ -695,7 +694,83 @@ func parseChanges(config Config, rawChanges string) []FileContent {
 		changes = append(changes, additionalChanges...)
 	}
 
+	// Process insert-before and insert-after
+	for i, change := range changes {
+		var insertionPoint string
+		var insertBefore bool
+
+		if insertBefore, insertionPoint = getInsertionPoint(change.Content); insertBefore || insertionPoint != "" {
+			baseDir := filepath.Dir(change.FilePath)
+			splitOrderPath := filepath.Join(baseDir, "splitorder.json")
+			splitOrder, err := readSplitOrder(splitOrderPath)
+			if err != nil {
+				fmt.Printf("Error reading split order for %s: %v\n", change.FilePath, err)
+				continue
+			}
+
+			newOrder := updateSplitOrder(splitOrder, filepath.Base(change.FilePath), insertionPoint, insertBefore)
+			writeSplitOrder(splitOrderPath, newOrder)
+
+			// Remove the insertion point from the content
+			changes[i].Content = removeInsertionPoint(change.Content)
+		}
+	}
+
 	return changes
+}
+
+func getInsertionPoint(content string) (bool, string) {
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "// insert-before: ") {
+			return true, strings.TrimPrefix(line, "// insert-before: ")
+		}
+		if strings.HasPrefix(line, "// insert-after: ") {
+			return false, strings.TrimPrefix(line, "// insert-after: ")
+		}
+	}
+	return false, ""
+}
+
+func readSplitOrder(path string) ([]string, error) {
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var order []string
+	err = json.Unmarshal(content, &order)
+	return order, err
+}
+
+func updateSplitOrder(order []string, newFile, insertionPoint string, insertBefore bool) []string {
+	for i, file := range order {
+		if file == insertionPoint+".gopart" {
+			if insertBefore {
+				return append(order[:i], append([]string{newFile}, order[i:]...)...)
+			}
+			return append(order[:i+1], append([]string{newFile}, order[i+1:]...)...)
+		}
+	}
+	return append(order, newFile)
+}
+
+func writeSplitOrder(path string, order []string) error {
+	content, err := json.Marshal(order)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(path, content, 0644)
+}
+
+func removeInsertionPoint(content string) string {
+	lines := strings.Split(content, "\n")
+	var newLines []string
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "// insert-before: ") && !strings.HasPrefix(line, "// insert-after: ") {
+			newLines = append(newLines, line)
+		}
+	}
+	return strings.Join(newLines, "\n")
 }
 
 func readFiles(fileList string) []FileContent {
@@ -886,9 +961,19 @@ func splitGoFile(filename string) {
 	// Write .gopart files
 	writeGopart(baseDir, "imports.gopart", packageAndImports.String())
 	writeGopart(baseDir, "varsandstructs.gopart", varsAndStructs.String())
-	for name, content := range functions {
-		writeGopart(baseDir, name+".gopart", content)
+
+	// Create and write splitorder.json
+	splitOrder := []string{"imports.gopart", "varsandstructs.gopart"}
+	for name := range functions {
+		splitOrder = append(splitOrder, name+".gopart")
+		writeGopart(baseDir, name+".gopart", functions[name])
 	}
+
+	splitOrderJSON, err := json.Marshal(splitOrder)
+	if err != nil {
+		log.Fatalf("Error marshaling split order: %v", err)
+	}
+	writeGopart(baseDir, "splitorder.json", string(splitOrderJSON))
 
 	fmt.Printf("Split %s into .gopart files in %s\n", filename, baseDir)
 }
@@ -910,43 +995,27 @@ func unsplitGoFile(filename string) {
 		log.Fatalf("Directory %s does not exist. Make sure you've split the file first.", baseDir)
 	}
 
-	// Read all .gopart files
-	files, err := ioutil.ReadDir(baseDir)
+	// Read splitorder.json
+	splitOrderJSON, err := ioutil.ReadFile(filepath.Join(baseDir, "splitorder.json"))
 	if err != nil {
-		log.Fatalf("Error reading directory %s: %v", baseDir, err)
+		log.Fatalf("Error reading splitorder.json: %v", err)
 	}
 
+	var splitOrder []string
+	err = json.Unmarshal(splitOrderJSON, &splitOrder)
+	if err != nil {
+		log.Fatalf("Error unmarshaling split order: %v", err)
+	}
+
+	// Read .gopart files in the order specified by splitorder.json
 	var parts []string
-	for _, file := range files {
-		if filepath.Ext(file.Name()) == ".gopart" {
-			content, err := ioutil.ReadFile(filepath.Join(baseDir, file.Name()))
-			if err != nil {
-				log.Fatalf("Error reading file %s: %v", file.Name(), err)
-			}
-			parts = append(parts, string(content))
+	for _, partFile := range splitOrder {
+		content, err := ioutil.ReadFile(filepath.Join(baseDir, partFile))
+		if err != nil {
+			log.Fatalf("Error reading file %s: %v", partFile, err)
 		}
+		parts = append(parts, string(content))
 	}
-
-	// Sort the parts to ensure correct order
-	sort.Slice(parts, func(i, j int) bool {
-		order := map[string]int{"package": 0, "import": 1, "var": 2, "const": 3, "type": 4, "func": 5}
-		iKeyword := getFirstKeyword(parts[i])
-		jKeyword := getFirstKeyword(parts[j])
-
-		iPriority, iExists := order[iKeyword]
-		jPriority, jExists := order[jKeyword]
-
-		if iExists && jExists {
-			return iPriority < jPriority
-		}
-		if iExists {
-			return true
-		}
-		if jExists {
-			return false
-		}
-		return false
-	})
 
 	// Combine the parts
 	combinedContent := strings.Join(parts, "\n\n")
