@@ -6,11 +6,13 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -28,6 +30,7 @@ import (
 
 //go:embed prompts/*.txt
 var promptFS embed.FS
+
 type FileContent struct {
 	FilePath string `json:"filepath"`
 	Content  string `json:"content,omitempty"`
@@ -49,11 +52,9 @@ type Config struct {
 	ProjectName     string
 	Merge           bool
 	Remove          bool
-	SplitFiles		string
-	UnsplitFiles 	string
-
+	SplitFiles      string
+	UnsplitFiles    string
 }
-
 
 func isPackageInModFile(modFile *modfile.File, packageName string) bool {
 	for _, req := range modFile.Require {
@@ -63,7 +64,6 @@ func isPackageInModFile(modFile *modfile.File, packageName string) bool {
 	}
 	return false
 }
-
 
 func commitChanges(config Config) {
 	commitMsg := generateCommitMessage(config)
@@ -80,18 +80,38 @@ func commitChanges(config Config) {
 	}
 }
 
-
-func checkoutBranch(branchName string) {
-	cmd := exec.Command("git", "checkout", "-b", branchName)
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println(err, cmd, " in checkoutBranch, not fatal")
-		cmd := exec.Command("git", "checkout", branchName)
-		cmd.Run()
-		//log.Fatal(err, cmd, " in checkoutBranch")
+func addFileContent(files *[]FileContent, path string) {
+	if info, err := os.Stat(path); err == nil {
+		if info.IsDir() {
+			err := filepath.Walk(path, func(subpath string, subinfo os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !subinfo.IsDir() && !strings.Contains(subpath, ".git") {
+					content, err := ioutil.ReadFile(subpath)
+					if err != nil {
+						log.Printf("Error reading file %s: %v", subpath, err)
+						return nil
+					}
+					*files = append(*files, FileContent{FilePath: subpath, Content: string(content)})
+				}
+				return nil
+			})
+			if err != nil {
+				log.Printf("Error walking directory %s: %v", path, err)
+			}
+		} else {
+			content, err := ioutil.ReadFile(path)
+			if err != nil {
+				log.Printf("Error reading file %s: %v", path, err)
+				return
+			}
+			*files = append(*files, FileContent{FilePath: path, Content: string(content)})
+		}
+	} else {
+		log.Printf("Error accessing file or directory %s: %v", path, err)
 	}
 }
-
 
 func loadConfig() Config {
 	godotenv.Load()
@@ -153,87 +173,47 @@ func loadConfig() Config {
 	return config
 }
 
-
 func createOpenAIClient(config Config) *openai.Client {
 	_config := openai.DefaultConfig(config.OrToken)
 	_config.BaseURL = config.OrBase
 	return openai.NewClientWithConfig(_config)
 }
 
-
-func main() {
-	checkGoVersion()
-	config := loadConfig()
-
-	if config.SplitFiles != "" {
-		splitGoFiles(config.SplitFiles)
-		return
-	}
-
-	if config.UnsplitFiles != "" {
-		unsplitGoFiles(config.UnsplitFiles)
-		return
-	}
-
-	// Automatically split all *.go files in the root directory
-	goFiles, err := filepath.Glob("*.go")
+func dependenciesNeedUpdate() bool {
+	goModContent, err := ioutil.ReadFile("go.mod")
 	if err != nil {
-		log.Fatal("Error finding Go files:", err)
+		log.Fatal("Error reading go.mod:", err)
 	}
-	splitGoFiles(strings.Join(goFiles, ","))
 
-	files := readGoPartFiles("editor")
-	branchName := generateBranchName(config, files)
-	checkoutBranch(branchName)
-
-	changes := generateChanges(config, files)
-	applyChanges(changes)
-
-	// Unsplit files after changes are applied
-	unsplitGoFiles(strings.Join(goFiles, ","))
-
-	updateDependencies()
-
-	ensureGoimportsInstalled()
-	runGoimports()
-
-	if buildSucceeds() {
-		commitChanges(config)
-		fmt.Println("Changes applied and committed successfully.")
-		showDiff()
-
-		if config.Merge {
-			mergeAndCleanup(branchName)
-		}
-	} else {
-		fmt.Println("Build failed. Please fix the issues and try again.")
+	mainContent, err := ioutil.ReadFile("main.go")
+	if err != nil {
+		log.Fatal("Error reading main.go:", err)
 	}
-}
 
-func readGoPartFiles(dir string) []FileContent {
-	var files []FileContent
+	modFile, err := modfile.Parse("go.mod", goModContent, nil)
+	if err != nil {
+		log.Fatal("Error parsing go.mod:", err)
+	}
 
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && filepath.Ext(path) == ".gopart" {
-			content, err := ioutil.ReadFile(path)
-			if err != nil {
-				return err
+	scanner := bufio.NewScanner(bytes.NewReader(mainContent))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "import") {
+			for scanner.Scan() {
+				importLine := scanner.Text()
+				if importLine == ")" {
+					break
+				}
+				packageName := strings.Trim(importLine, "\t \"")
+				if !isPackageInModFile(modFile, packageName) {
+					return true
+				}
 			}
-			files = append(files, FileContent{FilePath: path, Content: string(content)})
 		}
-		return nil
-	})
-
-	if err != nil {
-		log.Fatal("Error reading .gopart files:", err)
 	}
 
-	return files
+	return false
 }
-
 
 func ensureGoimportsInstalled() {
 	cmd := exec.Command("go", "install", "golang.org/x/tools/cmd/goimports@latest")
@@ -242,7 +222,6 @@ func ensureGoimportsInstalled() {
 		log.Fatal("Failed to install goimports:", err)
 	}
 }
-
 
 func findGoimports() (string, error) {
 	// Check in ~/go/bin/ (common location on macOS and Linux)
@@ -266,7 +245,6 @@ func findGoimports() (string, error) {
 	// Check in PATH
 	return exec.LookPath("goimports")
 }
-
 
 func generateAdditionalChanges(config Config, existingChanges []FileContent, remainingContent string) []FileContent {
 	client := createOpenAIClient(config)
@@ -310,7 +288,6 @@ func generateAdditionalChanges(config Config, existingChanges []FileContent, rem
 
 	return parseChanges(config, resp.Choices[0].Message.Content)
 }
-
 
 func generateBranchName(config Config, files []FileContent) string {
 	client := createOpenAIClient(config)
@@ -375,7 +352,7 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 		log.Fatal(err, "in generateChanges: template execution")
 	}
 
-	resp, err := client.CreateChatCompletion(
+	stream, err := client.CreateChatCompletionStream(
 		context.Background(),
 		openai.ChatCompletionRequest{
 			Model: config.OrHigh,
@@ -391,18 +368,25 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 	if err != nil {
 		log.Fatal(err, "in generateChanges")
 	}
+	defer stream.Close()
 
-	fmt.Println("raw changes suggestion: ", resp.Choices[0].Message.Content)
-
-	var changes []FileContent
-	err = json.Unmarshal([]byte(resp.Choices[0].Message.Content), &changes)
-	if err != nil {
-		log.Fatal("Error parsing changes JSON:", err)
+	var fullResponse strings.Builder
+	for {
+		response, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			log.Fatal("Stream error:", err)
+		}
+		fullResponse.WriteString(response.Choices[0].Delta.Content)
+		fmt.Print(response.Choices[0].Delta.Content)
 	}
 
-	return changes
-}
+	fmt.Println("\nRaw changes suggestion:", fullResponse.String())
 
+	return parseChanges(config, fullResponse.String())
+}
 
 func generateCommitMessage(config Config) string {
 	client := createOpenAIClient(config)
@@ -444,7 +428,6 @@ func generateCommitMessage(config Config) string {
 	return strings.TrimSpace(resp.Choices[0].Message.Content)
 }
 
-
 func getCurrentBranch() string {
 	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
 	out, err := cmd.Output()
@@ -454,8 +437,20 @@ func getCurrentBranch() string {
 	return strings.TrimSpace(string(out))
 }
 
-
-
+func getFirstKeyword(s string) string {
+	lines := strings.Split(s, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//go:embed") {
+			continue // Skip //go:embed lines when determining the first keyword
+		}
+		words := strings.Fields(trimmed)
+		if len(words) > 0 {
+			return words[0]
+		}
+	}
+	return ""
+}
 
 func getPromptContent(userFile, defaultFile string) string {
 	if userFile != "" {
@@ -473,7 +468,6 @@ func getPromptContent(userFile, defaultFile string) string {
 	return string(content)
 }
 
-
 func buildSucceeds() bool {
 	cmd := exec.Command("make", "build")
 	var stderr bytes.Buffer
@@ -489,27 +483,65 @@ func buildSucceeds() bool {
 	return true
 }
 
-
-func applyChanges(changes []FileContent) {
-	for _, change := range changes {
-		if change.Delete {
-			err := os.Remove(change.FilePath)
-			if err != nil {
-				log.Printf("Error deleting file %s: %v", change.FilePath, err)
-			} else {
-				fmt.Printf("Deleted file: %s\n", change.FilePath)
-			}
-		} else {
-			err := ioutil.WriteFile(change.FilePath, []byte(change.Content), 0644)
-			if err != nil {
-				log.Printf("Error writing file %s: %v", change.FilePath, err)
-			} else {
-				fmt.Printf("Updated file: %s\n", change.FilePath)
-			}
-		}
+func checkoutBranch(branchName string) {
+	cmd := exec.Command("git", "checkout", "-b", branchName)
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println(err, cmd, " in checkoutBranch, not fatal")
+		cmd := exec.Command("git", "checkout", branchName)
+		cmd.Run()
+		//log.Fatal(err, cmd, " in checkoutBranch")
 	}
 }
 
+func main() {
+	checkGoVersion()
+	config := loadConfig()
+
+	if config.SplitFiles != "" {
+		splitGoFiles(config.SplitFiles)
+		return
+	}
+
+	if config.UnsplitFiles != "" {
+		unsplitGoFiles(config.UnsplitFiles)
+		return
+	}
+
+	// Automatically split all *.go files in the root directory
+	goFiles, err := filepath.Glob("*.go")
+	if err != nil {
+		log.Fatal("Error finding Go files:", err)
+	}
+	splitGoFiles(strings.Join(goFiles, ","))
+
+	files := readGoPartFiles("editor")
+	branchName := generateBranchName(config, files)
+	checkoutBranch(branchName)
+
+	changes := generateChanges(config, files)
+	applyChanges(changes)
+
+	// Unsplit files after changes are applied
+	unsplitGoFiles(strings.Join(goFiles, ","))
+
+	updateDependencies()
+
+	ensureGoimportsInstalled()
+	runGoimports()
+
+	if buildSucceeds() {
+		commitChanges(config)
+		fmt.Println("Changes applied and committed successfully.")
+		showDiff()
+
+		if config.Merge {
+			mergeAndCleanup(branchName)
+		}
+	} else {
+		fmt.Println("Build failed. Please fix the issues and try again.")
+	}
+}
 
 func checkGoVersion() {
 	constraint := "1.21"
@@ -522,44 +554,6 @@ func checkGoVersion() {
 		log.Fatalf("Go version %s is required, but you have %s. Please upgrade your Go installation.", constraint, currentVersion)
 	}
 }
-
-
-func dependenciesNeedUpdate() bool {
-	goModContent, err := ioutil.ReadFile("go.mod")
-	if err != nil {
-		log.Fatal("Error reading go.mod:", err)
-	}
-
-	mainContent, err := ioutil.ReadFile("main.go")
-	if err != nil {
-		log.Fatal("Error reading main.go:", err)
-	}
-
-	modFile, err := modfile.Parse("go.mod", goModContent, nil)
-	if err != nil {
-		log.Fatal("Error parsing go.mod:", err)
-	}
-
-	scanner := bufio.NewScanner(bytes.NewReader(mainContent))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "import") {
-			for scanner.Scan() {
-				importLine := scanner.Text()
-				if importLine == ")" {
-					break
-				}
-				packageName := strings.Trim(importLine, "\t \"")
-				if !isPackageInModFile(modFile, packageName) {
-					return true
-				}
-			}
-		}
-	}
-
-	return false
-}
-
 
 func mergeAndCleanup(branchName string) {
 	// Checkout main
@@ -592,7 +586,6 @@ func mergeAndCleanup(branchName string) {
 
 	fmt.Printf("Branch %s merged into main, pushed, and deleted.\n", branchName)
 }
-
 
 func parseChanges(config Config, rawChanges string) []FileContent {
 	var changes []FileContent
@@ -645,7 +638,6 @@ func parseChanges(config Config, rawChanges string) []FileContent {
 	return changes
 }
 
-
 func readFiles(fileList string) []FileContent {
 	var files []FileContent
 
@@ -673,6 +665,29 @@ func readFiles(fileList string) []FileContent {
 	return files
 }
 
+func readGoPartFiles(dir string) []FileContent {
+	var files []FileContent
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".gopart" {
+			content, err := ioutil.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			files = append(files, FileContent{FilePath: path, Content: string(content)})
+		}
+		return nil
+	})
+
+	if err != nil {
+		log.Fatal("Error reading .gopart files:", err)
+	}
+
+	return files
+}
 
 func readInteractivePrompt() string {
 	fmt.Println("Enter your prompt (press Ctrl+D or Ctrl+Z on a new line to finish):")
@@ -686,7 +701,6 @@ func readInteractivePrompt() string {
 	}
 	return strings.Join(lines, "\n")
 }
-
 
 func removeAndCleanup(branchName string) {
 	// Checkout main
@@ -706,7 +720,6 @@ func removeAndCleanup(branchName string) {
 	fmt.Printf("Branch %s deleted and moved back to main branch.\n", branchName)
 }
 
-
 func runGoGet() {
 	cmd := exec.Command("go", "get", "./...")
 	var stderr bytes.Buffer
@@ -718,7 +731,6 @@ func runGoGet() {
 	}
 }
 
-
 func runGoModTidy() {
 	cmd := exec.Command("go", "mod", "tidy")
 	var stderr bytes.Buffer
@@ -729,7 +741,6 @@ func runGoModTidy() {
 		log.Fatalf("Error running go mod tidy: %v\n%s", err, stderr.String())
 	}
 }
-
 
 func runGoimports() {
 	goimportsPath, err := findGoimports()
@@ -745,7 +756,6 @@ func runGoimports() {
 	}
 }
 
-
 func showDiff() {
 	cmd := exec.Command("git", "diff", "--cached", "main")
 	output, err := cmd.Output()
@@ -756,87 +766,6 @@ func showDiff() {
 
 	fmt.Println("\nChanges made:")
 	fmt.Println(string(output))
-}
-
-
-func unsplitGoFile(filename string) {
-	baseDir := filepath.Join("editor", strings.TrimSuffix(filename, ".go"))
-	
-	// Check if the directory exists
-	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
-		log.Fatalf("Directory %s does not exist. Make sure you've split the file first.", baseDir)
-	}
-
-	// Read all .gopart files
-	files, err := ioutil.ReadDir(baseDir)
-	if err != nil {
-		log.Fatalf("Error reading directory %s: %v", baseDir, err)
-	}
-
-	var parts []string
-	for _, file := range files {
-		if filepath.Ext(file.Name()) == ".gopart" {
-			content, err := ioutil.ReadFile(filepath.Join(baseDir, file.Name()))
-			if err != nil {
-				log.Fatalf("Error reading file %s: %v", file.Name(), err)
-			}
-			parts = append(parts, string(content))
-		}
-	}
-
-	// Sort the parts to ensure correct order
-	sort.Slice(parts, func(i, j int) bool {
-		order := map[string]int{"package": 0, "import": 1, "var": 2, "const": 3, "type": 4, "func": 5}
-		iKeyword := getFirstKeyword(parts[i])
-		jKeyword := getFirstKeyword(parts[j])
-		
-		iPriority, iExists := order[iKeyword]
-		jPriority, jExists := order[jKeyword]
-		
-		if iExists && jExists {
-			return iPriority < jPriority
-		}
-		if iExists {
-			return true
-		}
-		if jExists {
-			return false
-		}
-		return false
-	})
-
-	// Combine the parts
-	combinedContent := strings.Join(parts, "\n\n")
-
-	// Write the combined content to the original .go file
-	err = ioutil.WriteFile(filename, []byte(combinedContent), 0644)
-	if err != nil {
-		log.Fatalf("Error writing file %s: %v", filename, err)
-	}
-
-	fmt.Printf("Recreated %s from .gopart files in %s\n", filename, baseDir)
-}
-
-func getFirstKeyword(s string) string {
-	lines := strings.Split(s, "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "//go:embed") {
-			continue // Skip //go:embed lines when determining the first keyword
-		}
-		words := strings.Fields(trimmed)
-		if len(words) > 0 {
-			return words[0]
-		}
-	}
-	return ""
-}
-
-func splitGoFiles(fileList string) {
-	files := strings.Split(fileList, ",")
-	for _, file := range files {
-		splitGoFile(strings.TrimSpace(file))
-	}
 }
 
 func splitGoFile(filename string) {
@@ -866,7 +795,7 @@ func splitGoFile(filename string) {
 
 	for _, decl := range f.Decls {
 		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			packageAndImports.WriteString(string(content[gen.Pos()-1 : gen.End()]) + "\n")
+			packageAndImports.WriteString(string(content[gen.Pos()-1:gen.End()]) + "\n")
 		}
 	}
 
@@ -886,11 +815,11 @@ func splitGoFile(filename string) {
 						}
 					}
 				}
-				varsAndStructs.WriteString(string(content[d.Pos()-1 : d.End()]) + "\n\n")
+				varsAndStructs.WriteString(string(content[d.Pos()-1:d.End()]) + "\n\n")
 			}
 		case *ast.FuncDecl:
 			name := d.Name.Name
-			functions[name] = string(content[d.Pos()-1 : d.End()]) + "\n"
+			functions[name] = string(content[d.Pos()-1:d.End()]) + "\n"
 		}
 	}
 
@@ -904,8 +833,70 @@ func splitGoFile(filename string) {
 	fmt.Printf("Split %s into .gopart files in %s\n", filename, baseDir)
 }
 
+func splitGoFiles(fileList string) {
+	files := strings.Split(fileList, ",")
+	for _, file := range files {
+		splitGoFile(strings.TrimSpace(file))
+	}
+}
 
+func unsplitGoFile(filename string) {
+	baseDir := filepath.Join("editor", strings.TrimSuffix(filename, ".go"))
 
+	// Check if the directory exists
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		log.Fatalf("Directory %s does not exist. Make sure you've split the file first.", baseDir)
+	}
+
+	// Read all .gopart files
+	files, err := ioutil.ReadDir(baseDir)
+	if err != nil {
+		log.Fatalf("Error reading directory %s: %v", baseDir, err)
+	}
+
+	var parts []string
+	for _, file := range files {
+		if filepath.Ext(file.Name()) == ".gopart" {
+			content, err := ioutil.ReadFile(filepath.Join(baseDir, file.Name()))
+			if err != nil {
+				log.Fatalf("Error reading file %s: %v", file.Name(), err)
+			}
+			parts = append(parts, string(content))
+		}
+	}
+
+	// Sort the parts to ensure correct order
+	sort.Slice(parts, func(i, j int) bool {
+		order := map[string]int{"package": 0, "import": 1, "var": 2, "const": 3, "type": 4, "func": 5}
+		iKeyword := getFirstKeyword(parts[i])
+		jKeyword := getFirstKeyword(parts[j])
+
+		iPriority, iExists := order[iKeyword]
+		jPriority, jExists := order[jKeyword]
+
+		if iExists && jExists {
+			return iPriority < jPriority
+		}
+		if iExists {
+			return true
+		}
+		if jExists {
+			return false
+		}
+		return false
+	})
+
+	// Combine the parts
+	combinedContent := strings.Join(parts, "\n\n")
+
+	// Write the combined content to the original .go file
+	err = ioutil.WriteFile(filename, []byte(combinedContent), 0644)
+	if err != nil {
+		log.Fatalf("Error writing file %s: %v", filename, err)
+	}
+
+	fmt.Printf("Recreated %s from .gopart files in %s\n", filename, baseDir)
+}
 
 func unsplitGoFiles(fileList string) {
 	files := strings.Split(fileList, ",")
@@ -913,7 +904,6 @@ func unsplitGoFiles(fileList string) {
 		unsplitGoFile(strings.TrimSpace(file))
 	}
 }
-
 
 func updateDependencies() {
 	if dependenciesNeedUpdate() {
@@ -925,40 +915,25 @@ func updateDependencies() {
 	}
 }
 
-
-func addFileContent(files *[]FileContent, path string) {
-	if info, err := os.Stat(path); err == nil {
-		if info.IsDir() {
-			err := filepath.Walk(path, func(subpath string, subinfo os.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-				if !subinfo.IsDir() && !strings.Contains(subpath, ".git") {
-					content, err := ioutil.ReadFile(subpath)
-					if err != nil {
-						log.Printf("Error reading file %s: %v", subpath, err)
-						return nil
-					}
-					*files = append(*files, FileContent{FilePath: subpath, Content: string(content)})
-				}
-				return nil
-			})
+func applyChanges(changes []FileContent) {
+	for _, change := range changes {
+		if change.Delete {
+			err := os.Remove(change.FilePath)
 			if err != nil {
-				log.Printf("Error walking directory %s: %v", path, err)
+				log.Printf("Error deleting file %s: %v", change.FilePath, err)
+			} else {
+				fmt.Printf("Deleted file: %s\n", change.FilePath)
 			}
 		} else {
-			content, err := ioutil.ReadFile(path)
+			err := ioutil.WriteFile(change.FilePath, []byte(change.Content), 0644)
 			if err != nil {
-				log.Printf("Error reading file %s: %v", path, err)
-				return
+				log.Printf("Error writing file %s: %v", change.FilePath, err)
+			} else {
+				fmt.Printf("Updated file: %s\n", change.FilePath)
 			}
-			*files = append(*files, FileContent{FilePath: path, Content: string(content)})
 		}
-	} else {
-		log.Printf("Error accessing file or directory %s: %v", path, err)
 	}
 }
-
 
 func writeGopart(dir, filename, content string) {
 	path := filepath.Join(dir, filename)
