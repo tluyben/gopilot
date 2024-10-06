@@ -1,7 +1,0 @@
-func unsplitGoFiles(fileList string) {
-	files := strings.Split(fileList, ",")
-	for _, file := range files {
-		unsplitGoFile(strings.TrimSpace(file))
-	}
-}
-

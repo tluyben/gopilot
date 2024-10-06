@@ -1,6 +1,0 @@
-func createOpenAIClient(config Config) *openai.Client {
-	_config := openai.DefaultConfig(config.OrToken)
-	_config.BaseURL = config.OrBase
-	return openai.NewClientWithConfig(_config)
-}
-

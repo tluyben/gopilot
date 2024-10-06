@@ -1,9 +1,0 @@
-func isPackageInModFile(modFile *modfile.File, packageName string) bool {
-	for _, req := range modFile.Require {
-		if strings.HasPrefix(packageName, req.Mod.Path) {
-			return true
-		}
-	}
-	return false
-}
-

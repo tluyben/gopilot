@@ -1,8 +1,0 @@
-func ensureGoimportsInstalled() {
-	cmd := exec.Command("go", "install", "golang.org/x/tools/cmd/goimports@latest")
-	err := cmd.Run()
-	if err != nil {
-		log.Fatal("Failed to install goimports:", err)
-	}
-}
-
