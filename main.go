@@ -358,8 +358,11 @@ func unsplitGoFile(filename string) {
 	// Combine the parts
 	combinedContent := strings.Join(parts, "\n\n")
 
+	// we don't know why this happens, but sometimes it adds this char which makes the code invalid
+	combinedContent = strings.ReplaceAll(combinedContent, "\x00", "")
+
 	// Write the combined content to the original .go file
-	err = ioutil.WriteFile(filename, []byte(combinedContent), 0644)
+	err = os.WriteFile(filename, []byte(combinedContent), 0644)
 	if err != nil {
 		log.Fatalf("Error writing file %s: %v", filename, err)
 	}
