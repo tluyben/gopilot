@@ -13,7 +13,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -183,7 +182,7 @@ func readGoPartFiles(dir string) []FileContent {
 			return err
 		}
 		if (!info.IsDir() && filepath.Ext(path) == ".gopart") {
-			content, err := ioutil.ReadFile(path)
+			content, err := os.ReadFile(path)
 			if (err != nil) {
 				return err
 			}
@@ -334,7 +333,7 @@ func unsplitGoFile(filename string) {
 	}
 
 	// Read splitorder.json
-	splitOrderJSON, err := ioutil.ReadFile(filepath.Join(baseDir, "splitorder.json"))
+	splitOrderJSON, err := os.ReadFile(filepath.Join(baseDir, "splitorder.json"))
 	if (err != nil) {
 		log.Fatalf("Error reading splitorder.json: %v", err)
 	}
@@ -348,7 +347,7 @@ func unsplitGoFile(filename string) {
 	// Read .gopart files in the order specified by splitorder.json
 	var parts []string
 	for _, partFile := range splitOrder {
-		content, err := ioutil.ReadFile(filepath.Join(baseDir, partFile))
+		content, err := os.ReadFile(filepath.Join(baseDir, partFile))
 		if (err != nil) {
 			log.Fatalf("Error reading file %s: %v", partFile, err)
 		}
@@ -532,7 +531,7 @@ func readInteractivePrompt() string {
 
 func splitGoFile(filename string) {
 	// Read the Go file
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	if (err != nil) {
 		log.Fatalf("Error reading file %s: %v", filename, err)
 	}
@@ -712,12 +711,12 @@ func unsplitGoFiles(fileList string) {
 }
 
 func dependenciesNeedUpdate() bool {
-	goModContent, err := ioutil.ReadFile("go.mod")
+	goModContent, err := os.ReadFile("go.mod")
 	if (err != nil) {
 		log.Fatal("Error reading go.mod:", err)
 	}
 
-	mainContent, err := ioutil.ReadFile("main.go")
+	mainContent, err := os.ReadFile("main.go")
 	if (err != nil) {
 		log.Fatal("Error reading main.go:", err)
 	}
@@ -843,7 +842,7 @@ func addFileContent(files *[]FileContent, path string) {
 					return err
 				}
 				if (!subinfo.IsDir() && !strings.Contains(subpath, ".git")) {
-					content, err := ioutil.ReadFile(subpath)
+					content, err := os.ReadFile(subpath)
 					if (err != nil) {
 						log.Printf("Error reading file %s: %v", subpath, err)
 						return nil
@@ -856,7 +855,7 @@ func addFileContent(files *[]FileContent, path string) {
 				log.Printf("Error walking directory %s: %v", path, err)
 			}
 		} else {
-			content, err := ioutil.ReadFile(path)
+			content, err := os.ReadFile(path)
 			if (err != nil) {
 				log.Printf("Error reading file %s: %v", path, err)
 				return
@@ -940,7 +939,7 @@ func prompt(config Config, goFiles []string) {
 
 func getPromptContent(userFile, defaultFile string) string {
 	if (userFile != "") {
-		content, err := ioutil.ReadFile(userFile)
+		content, err := os.ReadFile(userFile)
 		if (err == nil) {
 			return string(content)
 		}
@@ -956,7 +955,7 @@ func getPromptContent(userFile, defaultFile string) string {
 
 func writeGopart(dir, filename, content string) {
 	path := filepath.Join(dir, filename)
-	err := ioutil.WriteFile(path, []byte(content), 0644)
+	err := os.WriteFile(path, []byte(content), 0644)
 	if (err != nil) {
 		log.Fatalf("Error writing file %s: %v", path, err)
 	}
@@ -1254,7 +1253,7 @@ func applyChanges(changes []FileContent) {
 				}
 			}
 
-			err := ioutil.WriteFile(change.FilePath, []byte(change.Content), 0644)
+			err := os.WriteFile(change.FilePath, []byte(change.Content), 0644)
 			if (err != nil) {
 				log.Printf("Error writing file %s: %v", change.FilePath, err)
 			} else {

@@ -6,7 +6,8 @@ The project is structured with .gopart files in the editor directory. Each .go f
 - varsandstructs.gopart: Contains variable declarations and struct definitions
 - [functionname].gopart: Contains individual function definitions
 
-Only modify the .gopart files that need changes. You don't need to provide the entire content of files that remain unchanged, but if a function is new/changeed, then provide it completely always.
+Only modify the .gopart files that need changes. You don't need to provide the entire content of files that remain unchanged, but if a function is new/changeed, then provide it completely always. Refrain
+from using the deprecated ioutil package; use os and io instead where needed.
 
 Provide a valid JSON response containing only the changed .gopart files. Include the entire content of modified files. You can also delete files by setting the "delete" field to true.
 Make sure to include insert-before or insert-after for where to insert functions; this is for readability as well as where order matters (tests). 
