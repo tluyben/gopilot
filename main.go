@@ -524,7 +524,7 @@ func readInteractivePrompt() string {
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
-	if (err := scanner.Err(); err != nil) {
+	if err := scanner.Err(); err != nil {
 		log.Fatal("Error reading interactive prompt:", err)
 	}
 	return strings.Join(lines, "\n")
