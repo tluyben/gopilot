@@ -37,6 +37,10 @@ Example output:
   }
 ]
 
+Note that OTHER FILES than Go files, like .md , .txt etc files are NOT part of editor, so you just change those 'in place', not in editor directory. 
+For instance, README.md is always in the root etc. When you create or edit MD files, you *always* generate the entire file, not parts of it and you 
+always use emoji's. 
+
 Don't forget to SATISFY this prompt: {{.Prompt}}!!!
 
 MAKE SURE TO ONLY GENERATE VALID JSON. DO NOT INCLUDE ANY EXPLANATION OR OUTPUT OTHER THAN THE FILES TO CHANGE IN JSON FORMAT.
