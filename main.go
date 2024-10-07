@@ -379,11 +379,6 @@ func fixBuild(config Config) {
 		fmt.Println(stdout.String())
 		fmt.Println(stderr.String())
 
-		if !config.RetryOnErrors {
-			fmt.Println("Build errors encountered. Use -retry-on-errors flag to attempt automated fixes.")
-			return
-		}
-
 		// Generate a prompt to fix the build errors
 		promptContent := getPromptContent(config.FixJsonPrompt, "prompts/fix_build.txt")
 		tmpl, err := template.New("fixbuild").Parse(promptContent)
@@ -409,7 +404,9 @@ func fixBuild(config Config) {
 		// Attempt to build again
 		if !buildSucceeds() {
 			// If build still fails, recursively call fixBuild
-			fixBuild(config)
+			if config.RetryOnErrors {
+				fixBuild(config)
+			}
 		} else {
 			fmt.Println("Build errors fixed successfully.")
 		}
