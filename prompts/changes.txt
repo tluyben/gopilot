@@ -39,7 +39,7 @@ Example output:
 
 Note that OTHER FILES than Go files, like .md , .txt etc files are NOT part of editor, so you just change those 'in place', not in editor directory. 
 For instance, README.md is always in the root etc. When you create or edit MD files, you *always* generate the entire file, not parts of it and you 
-always use emoji's. 
+always use emoji's. When you are specifically asked to work on an .txt or .md file, you NEVER change code to the match the .md file ; you match the md file to the code. 
 
 Don't forget to SATISFY this prompt: {{.Prompt}}!!!
 
