@@ -611,7 +611,9 @@ func prompt(config Config, files []FileContent) {
 	if buildSucceeds() {
 		commitChanges(config)
 		fmt.Println("Changes applied and committed successfully.")
-		showDiff()
+
+		// this is a bit useless as it feels like we overwritten all... 
+		// showDiff()
 
 		if config.Merge {
 			mergeAndCleanup(branchName)
