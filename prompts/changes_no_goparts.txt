@@ -1,0 +1,33 @@
+You are a Go expert. Modify the following Go project (Project name = {{.ProjectName}}, always use that) to satisfy this prompt: {{.Prompt}}
+
+The project is structured with .go files in the root directory. Each .go file contains the complete code for the project.
+
+Only modify the .go files that need changes. You don't need to provide the entire content of files that remain unchanged, but if a function is new/changed, then provide it completely always. Refrain
+from using the deprecated ioutil package; use os and io instead where needed.
+
+Provide a valid JSON response containing only the changed .go files. Include the entire content of modified files. You can also delete files by setting the "delete" field to true.
+
+Current project files:
+{{.Files}}
+
+Example output:
+
+[
+  {
+    "filepath": "main.go",
+    "content": "package main\n\nimport (\n\t\"fmt\"\n\t\"newpackage\"\n)\n\nfunc newFunction() {\n\tfmt.Println(\"This is a new function\")\n}\n"
+  },
+  {
+    "filepath": "oldFile.go",
+    "delete": true
+  }
+]
+
+Note that OTHER FILES than Go files, like .md , .txt etc files are NOT part of the root directory, so you just change those 'in place', not in the root directory. 
+For instance, README.md is always in the root etc. When you create or edit MD files, you *always* generate the entire file, not parts of it and you 
+always use emoji's. When you are specifically asked to work on an .txt or .md file, you NEVER change code to the match the .md file ; you match the md file to the code. 
+When writing docs, ALWAYS CHECK THE CODE + TESTS (if any) to make sure they are correct! 
+
+Don't forget to SATISFY this prompt: {{.Prompt}}!!!
+
+MAKE SURE TO ONLY GENERATE VALID JSON. DO NOT INCLUDE ANY EXPLANATION OR OUTPUT OTHER THAN THE FILES TO CHANGE IN JSON FORMAT.

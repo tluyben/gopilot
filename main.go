@@ -57,6 +57,8 @@ type Config struct {
 	FixBuild        bool
 	FixTests        bool
 	RetryOnErrors   bool
+	NoGopart        bool // P2d32
+
 }
 
 type Session struct {
@@ -275,7 +277,17 @@ func ensureGoimportsInstalled() {
 func generateAdditionalChanges(config Config, existingChanges []FileContent, remainingContent string) []FileContent {
 	client := createOpenAIClient(config)
 
-	promptContent := getPromptContent(config.ChangesPrompt, "prompts/changes.txt")
+	promptFile := config.ChangesPrompt
+	if promptFile == "" {
+		if config.NoGopart {
+			promptFile = "prompts/changes_no_goparts.txt"
+		} else {
+			promptFile = "prompts/changes_goparts.txt"
+		}
+	}
+	
+	promptContent := getPromptContent(promptFile, promptFile)
+	// promptContent := getPromptContent(config.ChangesPrompt, "prompts/changes.txt")
 	tmpl, err := template.New("changes").Parse(promptContent)
 	if (err != nil) {
 		log.Fatal(err, "in generateAdditionalChanges: template parsing")
@@ -431,11 +443,13 @@ func RunGopilot(config Config) {
 	}
 
 	// Automatically split all *.go files in the root directory
-	goFiles, err := filepath.Glob("*.go")
-	if (err != nil) {
-		log.Fatal("Error finding Go files:", err)
+	if !config.NoGopart {
+		goFiles, err := filepath.Glob("*.go")
+		if (err != nil) {
+			log.Fatal("Error finding Go files:", err)
+		}
+		splitGoFiles(strings.Join(goFiles, ","))
 	}
-	splitGoFiles(strings.Join(goFiles, ","))
 
 	if config.FixBuild {
 		fixBuild(config)
@@ -447,8 +461,16 @@ func RunGopilot(config Config) {
 		return
 	}
 
+	files := readFiles(config.Files, config)
+
+	fmt.Println("Files to process:")
+	for _, file := range files {
+		fmt.Println(file.FilePath)
+	}
+	os.Exit(0)
+
 	if config.Prompt != "" {
-		prompt(config, goFiles)
+		prompt(config, files)
 	}
 
 	// Print session summary
@@ -609,7 +631,16 @@ func generateChanges(config Config, files []FileContent) []FileContent {
 
 	client := createOpenAIClient(config)
 
-	promptContent := getPromptContent(config.ChangesPrompt, "prompts/changes.txt")
+	promptFile := config.ChangesPrompt
+	if promptFile == "" {
+		if config.NoGopart {
+			promptFile = "prompts/changes_no_goparts.txt"
+		} else {
+			promptFile = "prompts/changes_goparts.txt"
+		}
+	}
+	
+	promptContent := getPromptContent(promptFile, promptFile)
 	tmpl, err := template.New("changes").Parse(promptContent)
 	if (err != nil) {
 		log.Fatal(err, "in generateChanges: template parsing")
@@ -690,6 +721,7 @@ func unsplitGoFiles(fileList string) {
 	if (err != nil) {
 		log.Fatalf("Error reading editor directory: %v", err)
 	}
+
 	for _, dir := range dirs {
 		if (dir.IsDir()) {
 			file := dir.Name() + ".go"
@@ -879,23 +911,36 @@ func showDiff() {
 	fmt.Println(string(output))
 }
 
-func readFiles(fileList string) []FileContent {
+func readFiles(fileList string, config Config) []FileContent {
 	var files []FileContent
 
-	if (fileList == "") {
+	patterns := []string{"*.gopart", "Makefile", "*.txt", "*.md"}
+	if config.NoGopart {
+		patterns = []string{"*.go", "Makefile", "*.txt", "*.md"}
+	}
+
+	if fileList == "" {
 		// Default file patterns
-		patterns := []string{"*.go", "Makefile", "*.txt", "*.md"}
-		for _, pattern := range patterns {
-			matches, err := filepath.Glob(pattern)
-			if (err != nil) {
-				log.Printf("Error globbing pattern %s: %v", pattern, err)
-				continue
+		err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
 			}
-			for _, match := range matches {
-				if (!strings.Contains(match, ".git")) {
-					addFileContent(&files, match)
+			if !info.IsDir() && !strings.Contains(path, ".git") {
+				for _, pattern := range patterns {
+					matched, err := filepath.Match(pattern, filepath.Base(path))
+					if err != nil {
+						return err
+					}
+					if matched {
+						addFileContent(&files, path)
+						break
+					}
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			log.Printf("Error walking the path: %v", err)
 		}
 	} else {
 		for _, file := range strings.Split(fileList, ",") {
@@ -906,8 +951,8 @@ func readFiles(fileList string) []FileContent {
 	return files
 }
 
-func prompt(config Config, goFiles []string) {
-	files := readGoPartFiles("editor")
+func prompt(config Config, files []FileContent) {
+	//files := readGoPartFiles("editor")
 	branchName := generateBranchName(config, files)
 	checkoutBranch(branchName)
 
@@ -916,7 +961,13 @@ func prompt(config Config, goFiles []string) {
 
 	// Unsplit files after changes are applied
 
-	unsplitGoFiles(strings.Join(goFiles, ","))
+	if !config.NoGopart {
+		goFiles, err := filepath.Glob("*.go")
+		if (err != nil) {
+			log.Fatal("Error finding Go files:", err)
+		}
+		unsplitGoFiles(strings.Join(goFiles, ","))
+	}
 
 	updateDependencies()
 
@@ -1065,6 +1116,7 @@ func updateSplitOrder(order []string, newFile, insertionPoint string, insertBefo
 }
 
 func loadConfig() Config {
+	
 	godotenv.Load()
 
 	config := Config{
@@ -1091,6 +1143,7 @@ func loadConfig() Config {
 	flag.BoolVar(&config.FixBuild, "fix-build", false, "Run make build and fix errors if any")
 	flag.BoolVar(&config.FixTests, "fix-tests", false, "Run make test and fix failing tests if any")
 	flag.BoolVar(&config.RetryOnErrors, "retry-on-errors", false, "Only do automated fixBuild after prompting failure when this flag is present")
+	flag.BoolVar(&config.NoGopart, "no-gopart", false, "Disable the use of .gopart files and pass .go files directly") // Pf2dc
 
 	// Add the new flag for interactive prompt
 	interactive := flag.Bool("inter", false, "Use interactive prompt")
