@@ -3,15 +3,3 @@ You are an expert Go programmer. The build for the project {{.ProjectName}} has 
 Here are the build errors:
 {{.BuildErrors}}
 
-Provide your changes in the following JSON format:
-
-[
-  {
-    "filepath": "path/to/file.gopart",
-    "content": "// New or modified content"
-  }
-]
-
-Make sure to include the entire content of the modified files, not just the changes. If you need to create a new file, include the full path and content. If you need to delete a file, set the "delete" field to true.
-
-Only suggest changes that are necessary to fix the build errors. Do not make any other modifications or improvements to the code.
